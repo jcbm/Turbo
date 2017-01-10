@@ -1,0 +1,36 @@
+TODO: reducer needs heartbeat
+
+Measure cost of having the reduce method in the task
+
+We need to know which subtasks a worker are doing, so we can re-route these if the worker crashes
+1) On recieving a result, we recieve the name of the parent task ->
+2) On recieving a finished task, we need to know the average time --> when the last subtask for a task is recieved, we must iterate over all the workers who have recieved the subtask =>
+Make HashMap of <SubTasks, Task> for first
+Make HashMap of <Task, List<Worker>> -- because we know this on sending and the worker object will know exactly which subtasks it has contributed with
+
+It would be better to save references to data as opposed to actual data in the SubTask objects - Hadoop works with TERABYTEs
+
+
+On worker crash, we know which worker has crashed => use workerinfoobj to get active tasks (a HashMap of parent and children) - get the parents functions and combine them with the collection in the subTaskData to create a new TaskMessage
+On worker up date
+
+http://stackoverflow.com/questions/258120/what-is-the-memory-consumption-of-an-object-in-java
+Divide and conquer-like
+
+
+
+Original MapReduce was based on generality of problems - is this approach general enough. What if architecture was further direct orchestrable so computation in even more steps could be performed across a series of nodes
+
+
+
+
+    An instance of HashMap has two parameters that affect its performance: initial capacity and load factor. The capacity is the number of buckets in the hash table, and the initial capacity is simply the capacity at the time the hash table is created. The load factor is a measure of how full the hash table is allowed to get before its capacity is automatically increased. When the number of entries in the hash table exceeds the product of the load factor and the current capacity, the hash table is rehashed (that is, internal data structures are rebuilt) so that the hash table has approximately twice the number of buckets.
+
+
+
+
+
+Y axis: Time
+x: 3 labels - Task run with no failures  ---- Task run with no other recovery than to resend --- Task run with my recovery mechanism
+
+Also compare RAM usage as a consequence of scale
