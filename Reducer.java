@@ -16,12 +16,14 @@ A reducer has a variable heartbeat frequence, applies reduce functions when all 
 
 public class Reducer {
 
+    private String address;
     private final int port;
     private final String guid;
     private final SchedulerInfo scheduler;
     private HashMap<String, Collection<Object>> taskData = new HashMap<>();
 
-    public Reducer(int port, String guid, SchedulerInfo scheduler) {
+    public Reducer(String address, int port, String guid, SchedulerInfo scheduler) {
+        this.address = address;
         this.port = port;
         this.guid = guid;
         this.scheduler = scheduler;

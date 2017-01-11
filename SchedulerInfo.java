@@ -4,10 +4,12 @@
 public class SchedulerInfo {
     private final String ip;
     private final int port;
+    private int heartFrequency;
 
-    public SchedulerInfo(String ip, int port) {
+    public SchedulerInfo(String ip, int port, int heartFrequency) {
         this.ip = ip;
         this.port = port;
+        this.heartFrequency = heartFrequency;
     }
 
     public String getIp() {
@@ -16,5 +18,9 @@ public class SchedulerInfo {
 
     public int getPort() {
         return port;
+    }
+
+    public int getHeartFrequency() {
+        return heartFrequency;
     }
 }

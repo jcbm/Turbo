@@ -6,6 +6,7 @@ import java.util.List;
 /**
  * Created by JC Denton on 04-01-2017.
  */
+ /*
 public class Application {
     // Initialize program from here
 
@@ -20,7 +21,7 @@ public class Application {
             List[] workersAndReducers = initNodeInfoFromFile(path);
             List<WorkerInfo> workers = workersAndReducers[0];
             List<ReducerInfo> reducers = workersAndReducers[1];
-            new Scheduler(workers, reducers);
+           // new Scheduler(workers, reducers);
 
         }
     }
@@ -68,3 +69,4 @@ public class Application {
 
     }
 }
+*/
