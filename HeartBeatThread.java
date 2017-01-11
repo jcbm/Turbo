@@ -1,8 +1,9 @@
-import java.net.Socket;
+//import java.net.Socket;
 
 /**
  * Created by JC Denton on 09-01-2017.
  */
+/*@Deprecated
 public class HeartBeatThread implements Runnable {
     private int beatFrequency;
 
@@ -46,3 +47,4 @@ public class HeartBeatThread implements Runnable {
         }
     }
 }
+*/

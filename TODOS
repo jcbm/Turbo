@@ -27,6 +27,9 @@ Original MapReduce was based on generality of problems - is this approach genera
     An instance of HashMap has two parameters that affect its performance: initial capacity and load factor. The capacity is the number of buckets in the hash table, and the initial capacity is simply the capacity at the time the hash table is created. The load factor is a measure of how full the hash table is allowed to get before its capacity is automatically increased. When the number of entries in the hash table exceeds the product of the load factor and the current capacity, the hash table is rehashed (that is, internal data structures are rebuilt) so that the hash table has approximately twice the number of buckets.
 
 
+Beskriv hvordan recovery er i BOINC, Hadoop og Spark
+
+
 
 
 
@@ -34,3 +37,19 @@ Y axis: Time
 x: 3 labels - Task run with no failures  ---- Task run with no other recovery than to resend --- Task run with my recovery mechanism
 
 Also compare RAM usage as a consequence of scale
+
+
+
+Different strategies was considered for how to keep track of things:
+Due to the way fault tolerance and evaluation is implemented the scheduler needs to keep track of:
+Which worker/reducer is associated with which subtask
+Which subtasks has a task been broken down to
+
+A hashmap where a tasks maps to all subtasks and a subtask contains a worker - Given a task, it's fast to lookup subtasks
+A hashMap where a task
+
+
+http://pepperdata.com/products/
+https://www.quora.com/What-is-resource-management-in-Hadoop
+
+Discussion: In BOINC, applications are run while the user is idle. While I have not adressed how

@@ -5,6 +5,20 @@ import java.util.ArrayList;
  */
 public class SubTaskData {
 
+    private int completionTime;
+
+    public String getId() {
+        return id;
+    }
+
+    public Object getData() {
+        return data;
+    }
+
+    public String getParentID() {
+        return parentID;
+    }
+
     private final String id;
     private final Object data;
     private final String parentID;
@@ -14,5 +28,13 @@ public class SubTaskData {
         this.id = id;
         this.data = data;
         this.parentID = parentID;
+    }
+
+    public void setCompletionTime(int completionTime) {
+        this.completionTime = completionTime;
+    }
+
+    public int getCompletionTime() {
+        return completionTime;
     }
 }

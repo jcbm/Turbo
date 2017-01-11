@@ -33,22 +33,19 @@ public class Worker {
     public void run() {
         // create heatbeat thread
         // create Executer thread
+        try {
+            ServerSocket serverSocket = new ServerSocket();
+            while (true) {
 
-        while (true) {
-            ServerSocket serverSocket = null;
-            try {
-                serverSocket = new ServerSocket();
 
-                Socket socket = null;
-
-                socket = serverSocket.accept();
-
+                Socket socket = serverSocket.accept();
                 new SocketHandler(socket).run();
-            } catch (IOException e) {
+            }
+        }catch (IOException e) {
                 e.printStackTrace();
             }
         }
-    }
+
 
 
         class SocketHandler implements Runnable {
