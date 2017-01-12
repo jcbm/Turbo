@@ -23,7 +23,7 @@ public class Driver {
             Worker worker = new Worker(localHost, port, guid, schedulerInfo);
             WorkerInfo workerInfo = new WorkerInfo(localHost, port, guid);
             workerInfos.add(workerInfo);
-            worker.run();
+           new Thread(worker).start();
             //workers.add(worker);
         }
         int reducerStartPort = 6000;
@@ -34,11 +34,12 @@ public class Driver {
             Reducer reducer = new Reducer(localHost, reducerPort, reducerID, schedulerInfo);
             ReducerInfo reducerInfo = new ReducerInfo(localHost, reducerPort, reducerID);
             reducerInfos.add(reducerInfo);
-            reducer.run();
+            new Thread(reducer).start();
         }
         try {
-            Scheduler scheduler = new Scheduler(workerInfos, reducerInfos, schedulingStrategy, heartBeatFrequency);
+            Scheduler scheduler = new Scheduler(workerInfos, reducerInfos, schedulingStrategy, heartBeatFrequency, schedulerPort);
             scheduler.addTask(new TestTask(splitSize));
+        new Thread(scheduler).start();
         } catch (Exception e) {
             e.printStackTrace();
         }

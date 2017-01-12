@@ -14,7 +14,7 @@ import java.util.HashMap;
 A reducer has a variable heartbeat frequence, applies reduce functions when all relevant info has been recieved
  */
 
-public class Reducer {
+public class Reducer implements Runnable {
 
     private String address;
     private final int port;

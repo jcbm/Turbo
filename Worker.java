@@ -9,7 +9,7 @@ import java.util.*;
 /**
  * Created by JC Denton on 04-01-2017.
  */
-public class Worker {
+public class Worker implements Runnable {
     private String address;
     private int port;
     private String id;
@@ -22,6 +22,9 @@ public class Worker {
     private HashSet<String> bannedReducers = new HashSet<>();
     private int taskCount;
     private boolean processingTasks;
+    // MonitorObjects
+    private Object syncObject = new Object();
+    private Object tasksAvailable = new Object();
 
     public Worker(String address, int port, String Id, SchedulerInfo scheduler) {
 
@@ -30,17 +33,17 @@ public class Worker {
         this.id = Id;
         this.scheduler = scheduler;
     }
-
+@Override
     public void run() {
         // create heatbeat thread
-        new HeartBeatThread(scheduler.getHeartFrequency()).run();
+        new Thread(new HeartBeatThread(scheduler.getHeartFrequency())).start();
         // create Executer thread
-        new Executor().run();
+        new Thread(new Executor()).start();
         try {
-            ServerSocket serverSocket = new ServerSocket();
+            ServerSocket serverSocket = new ServerSocket(port);
             while (true) {
                 Socket socket = serverSocket.accept();
-                new SocketHandler(socket).run();
+                new Thread(new SocketHandler(socket)).start();
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -60,6 +63,7 @@ public class Worker {
             try {
                 ObjectInputStream inputStream = new ObjectInputStream(socket.getInputStream());
                 Message message = (Message) inputStream.readObject();
+                inputStream.close();
                 MessageType type = message.getType();
                 if (type == MessageType.NEWTASK) {
                     TaskMessage task = (TaskMessage) message.getData();
@@ -84,6 +88,9 @@ public class Worker {
 
                     taskCount++;
                     // notify taskWorker thread
+                    synchronized (tasksAvailable) {
+                        tasksAvailable.notifyAll();
+                    }
                 } else if (type == MessageType.REDUCERFAILED) {
                     // A reducer has failed - all tasks associated with that reducer must be rerouted
                     ReducerSwitchMessage switchMessage = (ReducerSwitchMessage) message.getData();
@@ -153,15 +160,18 @@ public class Worker {
                 if (allTasks.isEmpty() && allPriorityTasks.isEmpty()) {
                     try {
                         processingTasks = false;
-                        wait();
-
+                        synchronized (tasksAvailable) {
+                            tasksAvailable.wait();
+                        }
                     } catch (InterruptedException e) {
 
                     }
                     // we've been awakened - tell heartbeat that we are active
 // TODO: start timer
                     processingTasks = true;
-
+                    synchronized(syncObject) {
+                        syncObject.notify();
+                    }
                     TaskMessage task;
                     boolean priorityTask = false;
                     if (!priorityIncomingTasks.isEmpty()) {
@@ -245,7 +255,9 @@ public class Worker {
                 // waits for processing of a task to start - initially false and set to false when a the task queue becomes empty AND last task has finished
                 while (!processingTasks) {
                     try {
-                        wait();
+                        synchronized(syncObject) {
+                            syncObject.wait();
+                        }
                     }
                     // processing of a task notifies thread that it has started
                     catch (InterruptedException e) {

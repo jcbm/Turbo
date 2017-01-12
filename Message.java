@@ -1,7 +1,9 @@
+import java.io.Serializable;
+
 /**
  * Created by JC Denton on 04-01-2017.
  */
-public class Message {
+public class Message implements Serializable{
 
 
     private final MessageType type;

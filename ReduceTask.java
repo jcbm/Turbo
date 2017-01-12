@@ -1,3 +1,4 @@
+import java.io.Serializable;
 import java.util.Collection;
 
 /**
@@ -9,7 +10,7 @@ A class to send jobs to the reducer. There's no need to include all the info tha
 // Possible split this into two so mappers only send the data, the rest is sent from the scheduler
  */
 
-public class ReduceTask {
+public class ReduceTask implements Serializable{
     private String parentTaskID;
     private final Collection data;
     private final Function reduce;

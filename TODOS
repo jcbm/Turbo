@@ -53,3 +53,5 @@ http://pepperdata.com/products/
 https://www.quora.com/What-is-resource-management-in-Hadoop
 
 Discussion: In BOINC, applications are run while the user is idle. While I have not adressed how
+
+netstat -a

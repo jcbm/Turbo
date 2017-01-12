@@ -1,7 +1,9 @@
+import java.io.Serializable;
+
 /**
  * Created by JC Denton on 10-01-2017.
  */
-public class ReducerSwitchMessage {
+public class ReducerSwitchMessage implements Serializable {
     private final String oldReducer;
     private final ReducerInfo newReducer;
 

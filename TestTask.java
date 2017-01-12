@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Created by JC Denton on 11-01-2017.
@@ -14,10 +15,10 @@ public class TestTask implements Task {
 
     @Override
     public Collection getData() {
-
-        ArrayList<Integer> numbers = new ArrayList<>(100);
         int size = splitSize * 3;
-        for (int i = 1; i <= splitSize; i++) {
+        ArrayList<Integer> numbers = new ArrayList<>(size);
+
+        for (int i = 1; i <= size; i++) {
             numbers.add(i);
             //System.out.println(numbers.get(i - 1));
         }
@@ -31,10 +32,11 @@ public class TestTask implements Task {
 
         // example: numbers 1-9 in data spread in 3 lists
         //
-
-        for (int i = 0; i <= splitSize; i = i + sizeOfSubCollections) {
-            ArrayList<Integer> subCollection = (ArrayList) ((ArrayList) data).subList(i, i + splitSize);
+        int firstElementOfSublist = 0;
+        for (int i = 0; i < splitSize; i++) {
+            ArrayList<Integer> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist, firstElementOfSublist + splitSize));
             collections.add(subCollection);
+            firstElementOfSublist += splitSize;
         }
         return collections;
     }
