@@ -29,21 +29,24 @@ public class WorkerInfo {
 
     // if a node crashes, we need to have saved what it was working on. We store subjobs by the parent jobs id, but in a list, so we may have multiple subjobs associated with the same parentjob, in case the node execues more subjobs associated with this job
     public void addActiveTask(SubTaskData subtask) {
+        System.out.println("WorkerInfo " + guid + " has added " + subtask.getId() + " to active set");
         String parentTask = subtask.getParentID();
         String subtaskID = subtask.getId();
         HashMap<String, SubTaskData> tasksForParent = activeTasks.get(parentTask);
         // No tasks have previously been added for this parent
         if (tasksForParent == null) {
             tasksForParent = new HashMap<>();
+            activeTasks.put(parentTask, tasksForParent);
+
         }
         tasksForParent.put(subtaskID, subtask);
-        activeTasks.put(parentTask, tasksForParent);
     }
 
     // When we recieve a task finished message - when a final result is recieved -
     // we inactivate a task when it is finished, that is, it is removed from the activeset. However, to know
     public void inactivateTask(String parentID, String subtaskID, int completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
         //should never return null, so we can be sure we get a collection
+        System.out.println("WorkerInfo " + guid + " is removing " + subtaskID + " from active set");
         HashMap<String, SubTaskData> subTaskDataHashMap = activeTasks.get(parentID);
         // this task has been completed
         SubTaskData subTaskData = subTaskDataHashMap.get(subtaskID);

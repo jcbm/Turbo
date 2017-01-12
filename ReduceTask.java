@@ -12,17 +12,17 @@ A class to send jobs to the reducer. There's no need to include all the info tha
 
 public class ReduceTask implements Serializable{
     private String parentTaskID;
-    private final Collection data;
+    private final Object data;
     private final Function reduce;
     private final int splitSize;
 
-    public ReduceTask(String parentTaskID, Collection data, Function reduce, int splitSize) {
+    public ReduceTask(String parentTaskID, Object data, Function reduce, int splitSize) {
         this.parentTaskID = parentTaskID;
         this.data = data;
         this.reduce = reduce;
         this.splitSize = splitSize;
     }
-    public Collection getData() {
+    public Object getData() {
         return data;
     }
 

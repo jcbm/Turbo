@@ -8,7 +8,14 @@ import java.util.*;
 
 /**
  * Created by JC Denton on 04-01-2017.
+ * <p/>
+ * On sent, a backup result is stored. If the recieving reducer crashes, these must be resent to another. However, they also have to be easy to remove when the reducer completes the task completely. Thus, we have a hashMap of hashmaps, where the reducerID is associated with <parentID, list of tasks>.
+ * Then if a reducer crashes, we can look up all the tasks that has been sent there and send to others, as these are every element associated with every parent in the inner hashmap. When a task is finish, we can throw out the result.
+ * The scheduler sends the reducer and parent task name, and we simply delete the parent element key from the inner map.
+ * On a reducer crash, the reduce task is stored in outgoingMessages by the reducer id. Later the old and a new ReducerInfo will be provided so the old id can be looked up and the associated tasks can be sent to the new reducer.
  */
+
+
 public class Worker implements Runnable {
     private String address;
     private int port;
@@ -19,6 +26,8 @@ public class Worker implements Runnable {
     private HashMap<String, List<TaskMessage>> priorityIncomingTasks = new HashMap<>();
     private HashMap<String, List<TaskMessage>> incomingTasks = new HashMap<>();
     private HashMap<String, List<ReduceTask>> outgoingMessages = new HashMap<>();
+    // ReducerID: <Sent result parent id, Sent Result>
+    private HashMap<String, HashMap<String, ArrayList<ReduceTask>>> resultBackup = new HashMap<>();
     private HashSet<String> bannedReducers = new HashSet<>();
     private int taskCount;
     private boolean processingTasks;
@@ -33,7 +42,8 @@ public class Worker implements Runnable {
         this.id = Id;
         this.scheduler = scheduler;
     }
-@Override
+
+    @Override
     public void run() {
         // create heatbeat thread
         new Thread(new HeartBeatThread(scheduler.getHeartFrequency())).start();
@@ -50,7 +60,6 @@ public class Worker implements Runnable {
         }
     }
 
-
     class SocketHandler implements Runnable {
         Socket socket;
 
@@ -66,11 +75,14 @@ public class Worker implements Runnable {
                 inputStream.close();
                 MessageType type = message.getType();
                 if (type == MessageType.NEWTASK) {
-                    TaskMessage task = (TaskMessage) message.getData();
 
+                    TaskMessage task = (TaskMessage) message.getData();
+                    writeToLog("recieved message - NEW TASK:" + task.getId());
                     // We've got work to do, boys! Enqueue task and notify worker thread - let worker thread deal with it
-                    String reducerID = task.getReducer().getGuid();
+                    String reducerID = task.getReducer().getID();
                     if (task.getPriority() == TaskPriority.HIGH) {
+                        writeToLog("NEW TASK:" + task.getId() + " has high priority");
+
                         List<TaskMessage> priorityTasks = priorityIncomingTasks.get(reducerID);
                         if (priorityTasks == null) {
                             priorityTasks = new ArrayList<>();
@@ -78,9 +90,10 @@ public class Worker implements Runnable {
                         allPriorityTasks.add(task);
                         priorityTasks.add(task);
                     } else {
-                        List<TaskMessage> ordinaryTasks = priorityIncomingTasks.get(reducerID);
+                        List<TaskMessage> ordinaryTasks = incomingTasks.get(reducerID);
                         if (ordinaryTasks == null) {
                             ordinaryTasks = new ArrayList<>();
+                            incomingTasks.put(reducerID, ordinaryTasks);
                         }
                         allTasks.add(task);
                         ordinaryTasks.add(task);
@@ -92,10 +105,13 @@ public class Worker implements Runnable {
                         tasksAvailable.notifyAll();
                     }
                 } else if (type == MessageType.REDUCERFAILED) {
+
                     // A reducer has failed - all tasks associated with that reducer must be rerouted
                     ReducerSwitchMessage switchMessage = (ReducerSwitchMessage) message.getData();
                     String oldReducer = switchMessage.getOldReducer();
                     ReducerInfo newReducer = switchMessage.getNewReducer();
+                    writeToLog("recieved message - REDUCER FAILED. Rereouting " + oldReducer + "tasks to " + newReducer.getID());
+
                     new ReducerUpdater(oldReducer, newReducer).run();
                 }
             } catch (ClassNotFoundException e) {
@@ -145,7 +161,7 @@ public class Worker implements Runnable {
                         }
                         objectOutputStream.close();
                     } catch (IOException e) {
-                        bannedReducers.add(newReducer.getGuid());
+                        bannedReducers.add(newReducer.getID());
                     }
                 }
             }
@@ -169,28 +185,32 @@ public class Worker implements Runnable {
                     // we've been awakened - tell heartbeat that we are active
 // TODO: start timer
                     processingTasks = true;
-                    synchronized(syncObject) {
+                    synchronized (syncObject) {
                         syncObject.notify();
                     }
+                    writeToLog("A task is available");
                     TaskMessage task;
                     boolean priorityTask = false;
                     if (!priorityIncomingTasks.isEmpty()) {
                         task = allPriorityTasks.get(0);
+                        allPriorityTasks.remove(0);
                         priorityTask = true;
                     } else {
                         // todo: should probably be atomic - nothing can read when between get and remove
                         task = allTasks.get(0);
                         allTasks.remove(0);
                     }
+                    writeToLog("processing task " + task.getId());
                     Function map = task.getMap();
                     Collection data = task.getData();
                     // it's up to the reduce function to cast result to something else
-                    Collection result = (Collection) map.execute(data);
+                    Object result = map.execute(data);
                     ReduceTask reduceTask = new ReduceTask(task.getParentId(), result, task.getReduce(), task.getSplitSize());
                     // TODO: stop timer - inform scheduler of time and status
                     String schedulerIp = scheduler.getIp();
                     int schedulerPort = scheduler.getPort();
-                    Message message = new Message(MessageType.FINISHEDTASK, null, id);
+                    Integer timeToComplete = 500; //fixme
+                    Message message = new Message(MessageType.FINISHEDTASK, timeToComplete, id, task.getId());
                     try {
                         Socket socketToScheduler = new Socket(schedulerIp, schedulerPort);
                         ObjectOutputStream objectOutputStream = new ObjectOutputStream(socketToScheduler.getOutputStream());
@@ -205,7 +225,7 @@ public class Worker implements Runnable {
                     // put in outgoing list - remove again when it is sent - it if fails or cant be sent it will be dealt with later
                     // outgoing should be HashMap where a reducerid is associated with a list of tasks - cleanup thread will then
                     ReducerInfo reducer = task.getReducer();
-                    String reducerID = reducer.getGuid();
+                    String reducerID = reducer.getID();
 
                     if (!bannedReducers.contains(reducerID)) {
                         String ip = reducer.getIp();
@@ -214,32 +234,53 @@ public class Worker implements Runnable {
                             Socket socketToReducer = new Socket(ip, port);
                             ObjectOutputStream objectOutputStream = new ObjectOutputStream(socketToReducer.getOutputStream());
                             objectOutputStream.writeObject(reduceTask);
-//TODO: Remove from incoming as it has been taken off - either it is sent or it is in outgoing collection
-                            List<TaskMessage> taskMessages = null;
-                            if (priorityTask) {
-                                taskMessages = priorityIncomingTasks.get(reducerID);
-                            } else {
-                                incomingTasks.get(reducerID);
-                                for (TaskMessage taskMsg : taskMessages) {
+                            objectOutputStream.close();
 
-                                }
+                            // Save the result for recovery
+                            String parentID = reduceTask.getParentTaskID();
+                            HashMap<String, ArrayList<ReduceTask>> tasksForReducer = resultBackup.get(reducerID);
+                            ArrayList<ReduceTask> subTasksForTask;
+                            if (tasksForReducer == null) {
+                                tasksForReducer = new HashMap<>();
+                                subTasksForTask = new ArrayList<>();
+                                tasksForReducer.put(parentID, subTasksForTask);
+                            } else {
+                                subTasksForTask = tasksForReducer.get(parentID);
                             }
+                            subTasksForTask.add(reduceTask);
+
                         } catch (IOException e) {
-                            e.printStackTrace();
+                            writeToLog("could not send" + task.getId() + " to" + reducerID + ".Reducer is banned now");
                             // reducer down - ban it so other threads don't attempt to use it
                             bannedReducers.add(reducerID);
                             List<ReduceTask> failedReduceTasks = outgoingMessages.get(reducerID);
                             if (failedReduceTasks == null) {
-                                failedReduceTasks = new ArrayList<ReduceTask>();
+                                failedReduceTasks = new ArrayList<>();
+                                outgoingMessages.put(reducerID, failedReduceTasks);
                             }
                             failedReduceTasks.add(reduceTask);
-                            outgoingMessages.put(reducerID, failedReduceTasks);
+                            //  outgoingMessages.put(reducerID, failedReduceTasks);
                         }
                     }
                 }
             }
         }
     }
+
+    private void writeToLog(String information) {
+        System.out.println("Worker " + id + ":" + information);
+    }
+
+    /*
+    public void resendOldResult(String reducerID, String parentID) {
+    hashmap = resultBackup.get(reducerID); // returns HashMap of all tasks that have been sent to the reducer
+    for every element in hashMap, get value (a list of subtasks) and resend
+    }
+
+    public void removeCompletedTaskFromBackup
+
+
+     */
 
     public class HeartBeatThread implements Runnable {
         private int beatFrequency;
@@ -255,7 +296,7 @@ public class Worker implements Runnable {
                 // waits for processing of a task to start - initially false and set to false when a the task queue becomes empty AND last task has finished
                 while (!processingTasks) {
                     try {
-                        synchronized(syncObject) {
+                        synchronized (syncObject) {
                             syncObject.wait();
                         }
                     }

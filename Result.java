@@ -1,7 +1,9 @@
+import java.io.Serializable;
+
 /**
  * Created by JC Denton on 04-01-2017.
  */
-public class Result {
+public class Result implements Serializable{
 
     private final String taskID;
     private final Object result;

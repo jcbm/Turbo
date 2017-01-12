@@ -23,7 +23,7 @@ public class ReducerInfo implements Serializable {
         return port;
     }
 
-    public String getGuid() {
+    public String getID() {
         return guid;
     }
 }

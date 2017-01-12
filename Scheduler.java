@@ -4,6 +4,7 @@ import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -18,12 +19,13 @@ public class Scheduler implements Runnable {
     //TODO: Handle case where a reducer crashes, so it is replaced with another. A worker then crashes
 
     private List<ReducerInfo> reducers; //
-    // private List<String> healthyWorkers = new ArrayList<>();
+    // list of all workers that are not working on anything
+    private List<String> availableWorkers = new ArrayList<>();
     private HashMap<String, WorkerInfo> healthyWorkers = new HashMap<>();  // WorkerId --> WorkerInfo
     public List<Task> tasks = new ArrayList<>();
     private HashMap<String, Object> results;
     private HashMap<String, SubTaskTimer> timesForTasks = new HashMap<>();
-    private TreeMap<String, Date> heartBeatHashMap = new TreeMap<>(); // treeMap is ordered
+    private ConcurrentSkipListMap<String, Date> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
     private HashMap<String, List<String>> workerResponsibleForTask = new HashMap<>(); // Look up the workers who have active tasks for
     private HashMap<String, String> subTaskIDToTaskId = new HashMap<>();
     private HashMap<String, HashSet<String>> parentToChildren = new HashMap<>(); // Look up the workers who have active tasks for
@@ -56,7 +58,7 @@ public class Scheduler implements Runnable {
 
         for (WorkerInfo worker : workers) {
             // we assume that all provided workers are healthy initially
-            // healthyWorkers.add(worker.getGUID());
+            availableWorkers.add(worker.getGUID());
             healthyWorkers.put(worker.getGUID(), worker);
         }
     }
@@ -130,10 +132,14 @@ public class Scheduler implements Runnable {
                     } catch (InterruptedException e) {
                     }
                 }
+                writeToLog("There are " + tasks.size() + " available tasks (EagertaskDistributor)");
                 // object creation should be avoided though and here we create
                 // TODO: note that we run sequntially through all tasks - we may also gain a speedup by parallelization
                 // Note that framework cannot realize any type of the data - it must use the generic collection class, and it is up to the Map/Reduce methods to perform the necessary casts
-                for (Task task : tasks) {
+                //for (Task task : tasks) {
+                // An iterator is used here so that a task can be removed when it has been processed
+                for (Iterator<Task> iter = tasks.listIterator(); iter.hasNext(); ) {
+                    Task task = iter.next();
                     Collection data = task.getData();
                     List[] subjobs; // split size is provided in data
                     // if there are more workers than elements in the data, split into single elements. Else, split after number of workers. A task can provide it's own split size, and throw the default value away in the split() method.
@@ -143,7 +149,7 @@ public class Scheduler implements Runnable {
                     List subjobInfo = subjobs[1];
 
                     sendTask(subjobs);
-
+                    iter.remove();
                 }
                 //   parentToChildrenTaskMap.put(parentJobId, subTasks);
             }
@@ -183,6 +189,7 @@ public class Scheduler implements Runnable {
             newTask.setReducer(reducer);
             newTask.setName(taskName);
             newTask.setParentId(parentJobid);
+            newTask.setSplitSize(splitSize);
             subTaskIDToTaskId.put(subTaskId, parentJobid);
             // create the state Object
             subTaskForState = new SubTaskData(subTaskId, collection, parentJobid);
@@ -234,37 +241,57 @@ public class Scheduler implements Runnable {
             for (int i = 0; i < subJobMessages.size(); i++) {
                 TaskMessage taskMessage = subJobMessages.get(i);
                 SubTaskData subTaskData = subJobData.get(i);
-                Iterator it = healthyWorkers.entrySet().iterator();
-                while (it.hasNext()) {
-                    Map.Entry pair = (Map.Entry) it.next();
-                    WorkerInfo worker = (WorkerInfo) pair.getValue();
+                WorkerInfo worker = getWorker();
+                String address = worker.getAddress();
+                int port = worker.getPort();
 
-                    String address = worker.getAddress();
-                    int port = worker.getPort();
-
-                    Message message = new Message(MessageType.NEWTASK, taskMessage, null);
-                    Socket socket = new Socket(address, port);
-                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                    objectOutputStream.writeObject(message);
-                    objectOutputStream.close();
-                    // only register as one of the nodes tasks if actually succeeds in sending
-                    worker.addActiveTask(subTaskData);
-                    setWorkerNodeAsActive(worker.getGUID());
-                    String reducerId = taskMessage.getReducer().getGuid();
-                    // List<Object> tasksAtReducer = HashMapHelper.safeGetHashMapCollection(tasksThatReducerIsResponsibleFor, reducerId);
-                    List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
-                    if (tasksAtReducer == null) {
-                        tasksAtReducer = new ArrayList<>();
-                    }
-                    tasksAtReducer.add(taskMessage.getParentId());
-                    tasksThatReducerIsResponsibleFor.put(taskMessage.getParentId(), tasksAtReducer);
+                Message message = new Message(MessageType.NEWTASK, taskMessage, null);
+                Socket socket = new Socket(address, port);
+                ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+                objectOutputStream.writeObject(message);
+                objectOutputStream.close();
+                String parentID = taskMessage.getParentId();
+               // Save which worker is responsible for subtasks of this parent
+                List<String> responsibleWorkersForParentTasks = workerResponsibleForTask.get(parentID);
+                if (responsibleWorkersForParentTasks == null) {
+                    responsibleWorkersForParentTasks = new ArrayList<>();
+                    workerResponsibleForTask.put(parentID, responsibleWorkersForParentTasks);
                 }
+                responsibleWorkersForParentTasks.add(worker.getGUID());
+                // only register as one of the nodes tasks if actually succeeds in sending
+                worker.addActiveTask(subTaskData);
+                setWorkerNodeAsActive(worker.getGUID());
+                String reducerId = taskMessage.getReducer().getID();
+                // List<Object> tasksAtReducer = HashMapHelper.safeGetHashMapCollection(tasksThatReducerIsResponsibleFor, reducerId);
+                List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
+                if (tasksAtReducer == null) {
+                    tasksAtReducer = new ArrayList<>();
+                    tasksThatReducerIsResponsibleFor.put(reducerId, tasksAtReducer);
+                }
+                tasksAtReducer.add(parentID);
             }
+
         } catch (Exception e) { // TODO: Change to better exception type
             System.out.println("Scheduler.sendTask() failed. Could not send task ");
             // save all receivers GUIDs of a task to a HashMap so that we can move the info from the
 
         }
+    }
+
+    public WorkerInfo getWorker() {
+        // pick first avilable worker if anybody is available
+        WorkerInfo workerInfo;
+        if (!availableWorkers.isEmpty()) {
+            String worker = availableWorkers.get(0);
+            workerInfo = healthyWorkers.get(worker);
+            availableWorkers.remove(0);
+        } else {
+            Random generator = new Random();
+            Object[] values = healthyWorkers.values().toArray();
+            workerInfo = (WorkerInfo) values[generator.nextInt(values.length)];
+            // send to random already busy worker
+        }
+        return workerInfo;
     }
 
     public class NetWorkListener implements Runnable {
@@ -312,6 +339,10 @@ public class Scheduler implements Runnable {
                 }
 
                 if (worker.isInactive()) { // worker is inactive if it has no tasks to finish
+                    writeToLog("Worker " + sender + " is available again");
+                    // now available  for selection again
+                    availableWorkers.add(sender);
+                    // dont check for heartbeat
                     setWorkerNodeAsInactive(sender);
                 }
             } else if (type == MessageType.HEARTBEAT) {
@@ -329,7 +360,7 @@ public class Scheduler implements Runnable {
 
                 //ArrayList<Task> subJobs = parentToChildrenTaskMap.get(parentTask);
 
-
+writeToLog("recieved result " + result.getResult() + " from task " + result.getTaskID());
                 Object resultValue = result.getResult(); // todo: instanceOf may be useful here
                 results.put(parentTask, result.getResult());
 
@@ -350,7 +381,6 @@ public class Scheduler implements Runnable {
                 while (it.hasNext()) {
                     Map.Entry pair = (Map.Entry) it.next();
                     Date lastTimeOfHeartBeat = (Date) pair.getValue();
-                    // System.out.println(pair.getKey() + " = " + pair.getValue());
                     cal.setTime(lastTimeOfHeartBeat);
                     // have x minutes gone by since we last heard from this - check that Date.now is not before the last time of heartbeat + x minutes (If now is 12.00 and time limit is 5 minutes, then last heartBeat would have to be at 11.55 it would be before now)
                     long timeInMilis = cal.getTimeInMillis();
@@ -366,6 +396,10 @@ public class Scheduler implements Runnable {
                 }
             }
         }
+    }
+
+    private void writeToLog(String information) {
+        System.out.println("Scheduler: " + information);
     }
 }
 

@@ -53,6 +53,12 @@ public class TestTask implements Task {
             @Override
             public Object execute(Collection<Object> data) {
                 int sum = 0;
+                // Have added sleep to delay execution
+                try {
+                    Thread.sleep(15 * 1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
                 for (Object integer : data) {
                     sum = sum + ((Integer) integer);
 

@@ -13,7 +13,8 @@ public class TaskMessage implements Serializable {
     private String name;
     private String parentId;
     private TaskPriority priority;
-private int splitSize;
+    private int splitSize;
+
     public TaskMessage(String id) {
         this.id = id;
     }

@@ -58,19 +58,24 @@ public class Reducer implements Runnable {
                 ObjectInputStream inputStream = new ObjectInputStream(socket.getInputStream());
                 ReduceTask task = (ReduceTask) inputStream.readObject();
                 inputStream.close();
+                logInfo("recieved a new subtask for" + task.getParentTaskID());
                 String parentTaskID = task.getParentTaskID();
                 Collection<Object> subresults = taskData.get(parentTaskID);
                 if (subresults == null) {
                     subresults = new ArrayList();
+                    taskData.put(parentTaskID, subresults);
                 }
                 subresults.add(task.getData());
                 // all subresults have been recieved
                 if (subresults.size() == task.getSplitSize()) {
+                    logInfo("have recieved all subtasks for " + task.getParentTaskID());
                     Function reduce = task.getReduce();
                     Result finalResult = new Result(parentTaskID, reduce.execute(subresults));
+                    Message message = new Message(MessageType.RESULT, finalResult,guid);
                     Socket socketToScheduler = new Socket(scheduler.getIp(), scheduler.getPort());
-                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                    objectOutputStream.writeObject(finalResult);
+                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(socketToScheduler.getOutputStream());
+                    objectOutputStream.writeObject(message);
+                   objectOutputStream.close();
                     // no exceptions have been thrown, so the result has been succesfully transfered - now we can remove the subresults
                     taskData.remove(parentTaskID);
 
@@ -82,6 +87,10 @@ public class Reducer implements Runnable {
             }
 
         }
+    }
+
+    private void logInfo(String information) {
+        System.out.println("Reducer " + guid + " " + information );
     }
 
 }
