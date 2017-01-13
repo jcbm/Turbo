@@ -21,7 +21,8 @@ Divide and conquer-like
 
 Original MapReduce was based on generality of problems - is this approach general enough. What if architecture was further direct orchestrable so computation in even more steps could be performed across a series of nodes
 
-
+Sammenlign tid for normal kørsel med tid for recovery m. genbrug af gemte tasks og tid for recovery u. gemte tasks
+Sammenlign ydermere med at løse problemet sekventielt
 
 
     An instance of HashMap has two parameters that affect its performance: initial capacity and load factor. The capacity is the number of buckets in the hash table, and the initial capacity is simply the capacity at the time the hash table is created. The load factor is a measure of how full the hash table is allowed to get before its capacity is automatically increased. When the number of entries in the hash table exceeds the product of the load factor and the current capacity, the hash table is rehashed (that is, internal data structures are rebuilt) so that the hash table has approximately twice the number of buckets.
