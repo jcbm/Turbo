@@ -5,7 +5,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.SocketHandler;
 
 /**
  * Created by JC Denton on 04-01-2017.
@@ -18,22 +18,31 @@ public class Scheduler implements Runnable {
 
     //TODO: Handle case where a reducer crashes, so it is replaced with another. A worker then crashes
 
-    private List<ReducerInfo> reducers; //
-    // list of all workers that are not working on anything
+    // available reducers to chose from
+    private HashMap<String, ReducerInfo> reducers = new HashMap<>(); //
+    // TaskId to Reducerid - used to keep the reducer for a subtask when a worker fails. Must be updated when a reducer crashes. A task is associated with one reducer.
+    private HashMap<String, String> taskToReducer = new HashMap<>();
+    // For reducer recovery - ReducerID : List of task IDs. A reducer may be associated with many tasks.
+    private HashMap<String, List<String>> tasksThatReducerIsResponsibleFor = new HashMap<>();
+
+
+    // All id's of workers that are not working on anything currently
     private List<String> availableWorkers = new ArrayList<>();
     private HashMap<String, WorkerInfo> healthyWorkers = new HashMap<>();  // WorkerId --> WorkerInfo
-    public List<Task> tasks = new ArrayList<>();
-    private HashMap<String, Object> results;
-    private HashMap<String, SubTaskTimer> timesForTasks = new HashMap<>();
-    private ConcurrentSkipListMap<String, Date> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
     private HashMap<String, List<String>> workerResponsibleForTask = new HashMap<>(); // Look up the workers who have active tasks for
+
+    private List<Task> tasks = new ArrayList<>();
     private HashMap<String, String> subTaskIDToTaskId = new HashMap<>();
-    private HashMap<String, HashSet<String>> parentToChildren = new HashMap<>(); // Look up the workers who have active tasks for
-    private HashSet<String> availableNodes = new HashSet<>();
-    private HashMap<String, List<String>> tasksThatReducerIsResponsibleFor = new HashMap<>();
+    private HashMap<String, SubTaskTimer> timesForTasks = new HashMap<>();
+    private HashMap<String, Task> processedTasks = new HashMap<>();
+    // TaskId : Result
+    private HashMap<String, Object> results = new HashMap<>();
+    private ConcurrentSkipListMap<String, Date> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
+
 
     //Monitors:
     private Object tasksForSending = new Object();
+
 
     public Scheduler(List<WorkerInfo> workers, List<ReducerInfo> reducers, SchedulingStrategy schedulingStrategy, int heartBeatFrequencyInMinutes, int port) throws Exception {
         this.workers = workers;
@@ -50,14 +59,17 @@ public class Scheduler implements Runnable {
             throw new Exception("No reducers assigned!");
         }
         if (reducers.size() > workers.size()) {
-            throw new Exception("More reducers than workers have been provided!");
+            // fixme: I dont think this is a problem anyway
+            // throw new Exception("More reducers than workers have been provided!");
         }
 
 //        this.workers = workers; // all workers on startup
-        this.reducers = reducers;
 
+        for (ReducerInfo reducer : reducers) {
+            this.reducers.put(reducer.getID(), reducer);
+        }
         for (WorkerInfo worker : workers) {
-            // we assume that all provided workers are healthy initially
+
             availableWorkers.add(worker.getGUID());
             healthyWorkers.put(worker.getGUID(), worker);
         }
@@ -134,20 +146,15 @@ public class Scheduler implements Runnable {
                 }
                 writeToLog("There are " + tasks.size() + " available tasks (EagertaskDistributor)");
                 // object creation should be avoided though and here we create
-                // TODO: note that we run sequntially through all tasks - we may also gain a speedup by parallelization
                 // Note that framework cannot realize any type of the data - it must use the generic collection class, and it is up to the Map/Reduce methods to perform the necessary casts
-                //for (Task task : tasks) {
                 // An iterator is used here so that a task can be removed when it has been processed
                 for (Iterator<Task> iter = tasks.listIterator(); iter.hasNext(); ) {
                     Task task = iter.next();
                     Collection data = task.getData();
-                    List[] subjobs; // split size is provided in data
+                    //List[] subjobs; // split size is provided in data
                     // if there are more workers than elements in the data, split into single elements. Else, split after number of workers. A task can provide it's own split size, and throw the default value away in the split() method.
                     int splitSize = data.size() < healthyWorkers.size() ? data.size() : healthyWorkers.size();
-                    subjobs = createSubjobs(task, task.split(data, splitSize));
-                    List<TaskMessage> taskMessages = subjobs[0];
-                    List subjobInfo = subjobs[1];
-
+                    ArrayList<SubTaskMessageStatePair> subjobs = createSubjobs(task, task.split(data, splitSize));
                     sendTask(subjobs);
                     iter.remove();
                 }
@@ -165,46 +172,54 @@ public class Scheduler implements Runnable {
      * @return
      */
 
-    public List[] createSubjobs(Task task, Collection<Collection> data) {
+    public ArrayList<SubTaskMessageStatePair> createSubjobs(Task task, Collection<Collection> data) {
 
-        TaskMessage newTask = null;
-        SubTaskData subTaskForState = null;
-        ArrayList<TaskMessage> tasks = new ArrayList<>();
-        ArrayList<SubTaskData> tasksForState = new ArrayList<>();
-
+        SubtaskMessage newSubTask;
+        SubTaskData subTaskForState;
         String taskName = task.getName();
-        String parentJobid = java.util.UUID.randomUUID().toString();
+        String parentTaskID = java.util.UUID.randomUUID().toString();
+        processedTasks.put(parentTaskID, task); // A little early to call it a processed task, but here we give it an ID
         Function mapFunction = task.getMapFunction();
         Function reduceFunction = task.getReduceFunction();
-        ReducerInfo reducer = getNewReducer();
-        int splitSize = data.size();
-        timesForTasks.put(parentJobid, new SubTaskTimer(splitSize));
+        ReducerInfo reducer = getNewReducer(parentTaskID);
+        int splitSize = task.getSplitSize(); // todo: may have fucked something up here: old value = data.size();
+        timesForTasks.put(parentTaskID, new SubTaskTimer(splitSize));
+        ArrayList<SubTaskMessageStatePair> subTaskMessageStatePairs = new ArrayList<>();
         for (Collection collection : data) { // note: Collection of collections
             // Create the message
             String subTaskId = java.util.UUID.randomUUID().toString();
-            newTask = new TaskMessage(subTaskId);
-            newTask.setMap(mapFunction);
-            newTask.setReduce(reduceFunction);
-            newTask.setData(collection);
-            newTask.setReducer(reducer);
-            newTask.setName(taskName);
-            newTask.setParentId(parentJobid);
-            newTask.setSplitSize(splitSize);
-            subTaskIDToTaskId.put(subTaskId, parentJobid);
+            newSubTask = new SubtaskMessage(subTaskId);
+            newSubTask.setMap(mapFunction);
+            newSubTask.setReduce(reduceFunction);
+            newSubTask.setData(collection);
+            newSubTask.setReducer(reducer);
+            newSubTask.setName(taskName);
+            newSubTask.setParentId(parentTaskID);
+            newSubTask.setSplitSize(splitSize);
+            subTaskIDToTaskId.put(subTaskId, parentTaskID);
             // create the state Object
-            subTaskForState = new SubTaskData(subTaskId, collection, parentJobid);
-            tasks.add(newTask);
-            tasksForState.add(subTaskForState);
-
+            subTaskForState = new SubTaskData(subTaskId, collection, parentTaskID);
+            SubTaskMessageStatePair subTaskMessageStatePair = new SubTaskMessageStatePair(newSubTask, subTaskForState);
+            subTaskMessageStatePairs.add(subTaskMessageStatePair);
         }
-        List[] list = new List[]{tasks, tasksForState};
-        return list;
+        return subTaskMessageStatePairs;
     }
 
-    public ReducerInfo getNewReducer() {
-        // pick random
-        int randomNum = ThreadLocalRandom.current().nextInt(0, reducers.size());
-        return reducers.get(randomNum); //TODO get a new reducer in each call - optimize to get one that isn't assigned to other things
+    /*
+     A hashMap is used to remember which subtasks have been sent to a reducer - All subtasks belonging to one task must be sent to the same reducer - so this must be used if a subtask is rerouted to a new
+      An alternative approach would be to save the reducer in the subtaskdata object in the workerinfo, but it would be hard to update in case of a reducer crash
+     */
+    public ReducerInfo getNewReducer(String taskID) {
+        String reducerUsedforThisTask = taskToReducer.get(taskID);
+        if (reducerUsedforThisTask != null) {
+            return reducers.get(reducerUsedforThisTask);
+        } else {
+            // pick random
+            Random generator = new Random();
+            Object[] values = reducers.values().toArray();
+            ReducerInfo randomReducer = (ReducerInfo) values[generator.nextInt(values.length)];
+            return randomReducer;
+        }
     }
 
     /*
@@ -221,7 +236,7 @@ public class Scheduler implements Runnable {
                 // Notify when worker is ready
                 if (tasks.isEmpty() || healthyWorkers.isEmpty()) {
                     try {
-                        this.wait();
+                        tasksForSending.wait();
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -234,24 +249,22 @@ public class Scheduler implements Runnable {
     }
 
     // called by scheduling strategy
-    private void sendTask(List[] subJobs) {
-        List<TaskMessage> subJobMessages = subJobs[0];
-        List<SubTaskData> subJobData = subJobs[1];
+    private void sendTask(ArrayList<SubTaskMessageStatePair> subJobs) {
         try {
-            for (int i = 0; i < subJobMessages.size(); i++) {
-                TaskMessage taskMessage = subJobMessages.get(i);
-                SubTaskData subTaskData = subJobData.get(i);
+            for (SubTaskMessageStatePair messageAndState : subJobs) {
+                SubtaskMessage subtaskMessage = messageAndState.getMessage();
+                SubTaskData subTaskData = messageAndState.getState();
                 WorkerInfo worker = getWorker();
                 String address = worker.getAddress();
                 int port = worker.getPort();
 
-                Message message = new Message(MessageType.NEWTASK, taskMessage, null);
+                Message message = new Message(MessageType.NEWTASK, subtaskMessage, null);
                 Socket socket = new Socket(address, port);
                 ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
                 objectOutputStream.writeObject(message);
                 objectOutputStream.close();
-                String parentID = taskMessage.getParentId();
-               // Save which worker is responsible for subtasks of this parent
+                String parentID = subtaskMessage.getParentId();
+                // Save which worker is responsible for subtasks of this parent
                 List<String> responsibleWorkersForParentTasks = workerResponsibleForTask.get(parentID);
                 if (responsibleWorkersForParentTasks == null) {
                     responsibleWorkersForParentTasks = new ArrayList<>();
@@ -261,8 +274,8 @@ public class Scheduler implements Runnable {
                 // only register as one of the nodes tasks if actually succeeds in sending
                 worker.addActiveTask(subTaskData);
                 setWorkerNodeAsActive(worker.getGUID());
-                String reducerId = taskMessage.getReducer().getID();
-                // List<Object> tasksAtReducer = HashMapHelper.safeGetHashMapCollection(tasksThatReducerIsResponsibleFor, reducerId);
+                String reducerId = subtaskMessage.getReducer().getID();
+// Store that the reducer is responsible for this given task
                 List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
                 if (tasksAtReducer == null) {
                     tasksAtReducer = new ArrayList<>();
@@ -270,14 +283,14 @@ public class Scheduler implements Runnable {
                 }
                 tasksAtReducer.add(parentID);
             }
-
-        } catch (Exception e) { // TODO: Change to better exception type
+        } catch (IOException e) {
             System.out.println("Scheduler.sendTask() failed. Could not send task ");
             // save all receivers GUIDs of a task to a HashMap so that we can move the info from the
 
         }
     }
 
+    // This is the scheduling algorithm. It sucks currently.
     public WorkerInfo getWorker() {
         // pick first avilable worker if anybody is available
         WorkerInfo workerInfo;
@@ -286,10 +299,11 @@ public class Scheduler implements Runnable {
             workerInfo = healthyWorkers.get(worker);
             availableWorkers.remove(0);
         } else {
+            // send to random already busy worker
             Random generator = new Random();
             Object[] values = healthyWorkers.values().toArray();
             workerInfo = (WorkerInfo) values[generator.nextInt(values.length)];
-            // send to random already busy worker
+
         }
         return workerInfo;
     }
@@ -347,8 +361,8 @@ public class Scheduler implements Runnable {
                 }
             } else if (type == MessageType.HEARTBEAT) {
                 String sender = message.getSender();
-                Date timeRecieved = new Date();
-                updateHeartbeats(sender, timeRecieved);
+                Date timeReceived = new Date();
+                updateHeartbeats(sender, timeReceived);
             } else if (type == MessageType.RESULT) {
                 Result result = (Result) message.getData();
                 String parentTask = result.getTaskID(); // parent task - now we need to know who worked on this task => get children of task, look up their responsibleWorker
@@ -359,9 +373,7 @@ public class Scheduler implements Runnable {
                 }
 
                 //ArrayList<Task> subJobs = parentToChildrenTaskMap.get(parentTask);
-
-writeToLog("recieved result " + result.getResult() + " from task " + result.getTaskID());
-                Object resultValue = result.getResult(); // todo: instanceOf may be useful here
+                writeToLog("recieved result " + result.getResult() + " from task " + result.getTaskID());
                 results.put(parentTask, result.getResult());
 
             }
@@ -386,17 +398,88 @@ writeToLog("recieved result " + result.getResult() + " from task " + result.getT
                     long timeInMilis = cal.getTimeInMillis();
                     Date lastHeartBeatPlusTimeLimit = new Date(timeInMilis + (heartBeatFrequencyInMinutes * ONE_MINUTE_IN_MILLIS));
                     if (now.before(lastHeartBeatPlusTimeLimit)) {
-                        // node has crashed
+                        // node has crashed - this handles worker
                         String nodeId = (String) pair.getKey();
-                        //                    removeNodeAndReplace(nodeId);
+                        removeNodeAndResendActiveTasks(nodeId);
                         it.remove();
+                        // for reducer we need to know which tasks it is responsible -- TODO find good way to know if type of node is worker or reducer
+                       // dont assign this reducer to anything anymore
+                        reducers.remove(nodeId);
+
+                        List<String> taskIDs = tasksThatReducerIsResponsibleFor.get(nodeId);
+                        // for every task, we need to tell the workers responsible for a subtask that it should use a new reducer
+HashSet<String> workersToNotify = new HashSet<>();
+                        for (String taskID : taskIDs ) {
+                            List<String> workersForTask = workerResponsibleForTask.get(taskID);
+                            for (String workerForTask : workersForTask) {
+                                // Using a set here as a worker may be associated with several tasks, but we only want to notify it once
+                                workersToNotify.add(workerForTask)
+                            }
+                        }
+                        ReducerSwitchMessage reducerSwitchMessage = new ReducerSwitchMessage(nodeId, getNewReducer());//get a new reducer and inform workers
+                        Message message =  new Message(MessageType.REDUCERFAILED, reducerSwitchMessage, null); // id is irrelevant here
+                        for (String worker : workersToNotify) {
+                            WorkerInfo workerInfo = healthyWorkers.get(worker);
+                            workerInfo.getAddress();
+                            workerInfo.getPort();
+                            Socket socket = new Socket();
+                        }
                     }
 
 
                 }
             }
         }
+
+        private void removeNodeAndResendActiveTasks(String nodeId) {
+            // Get the info for the failed node
+            WorkerInfo failedNode = healthyWorkers.get(nodeId);
+            // worker can no longer be selected for work
+            availableWorkers.remove(nodeId);
+            healthyWorkers.remove(nodeId);
+            // get the worker's active tasks - they have to go to the same reducer as originally destined
+            ArrayList<SubTaskMessageStatePair> subTaskMessageStatePairs = generateNewTasks(failedNode);
+            sendTask(subTaskMessageStatePairs);
+
+        }
+
+
+        private ArrayList<SubTaskMessageStatePair> generateNewTasks(WorkerInfo worker) {
+// combine the data in every TaskDataObject from the WorkerInfo with the original tasks
+            // for every task and for every subtask associated with the task
+            ArrayList<SubTaskMessageStatePair> messages = new ArrayList<>();
+            HashMap<String, HashMap<String, SubTaskData>> lostTasks = worker.getActiveTasks();
+            Iterator it = lostTasks.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry pair = (Map.Entry) it.next();
+                String parentTask = (String) pair.getKey();
+                HashMap<String, SubTaskData> subtasksForParent = (HashMap) pair.getValue();
+                Iterator subtaskIterator = subtasksForParent.entrySet().iterator();
+                Task originalTask = processedTasks.get(parentTask);
+                while (subtaskIterator.hasNext()) {
+                    Map.Entry subTaskIdSubtaskPair = (Map.Entry) subtaskIterator.next();
+                    String subTaskId = (String) subTaskIdSubtaskPair.getKey();
+                    SubTaskData subTaskData = (SubTaskData) subTaskIdSubtaskPair.getValue();
+
+                    SubtaskMessage newTask = new SubtaskMessage(subTaskId);
+                    newTask.setMap(originalTask.getMapFunction());
+                    newTask.setReduce(originalTask.getReduceFunction());
+                    newTask.setData((Collection) subTaskData.getData());
+                    newTask.setReducer(getNewReducer(parentTask));
+                    newTask.setName(originalTask.getName());
+                    newTask.setParentId(parentTask);
+                    newTask.setSplitSize(originalTask.getSplitSize());
+                    // note that the old task can simply be reused - it's just put into another workers workerinfo object
+                    SubTaskMessageStatePair subTaskMessageStatePair = new SubTaskMessageStatePair(newTask, subTaskData);
+                    messages.add(subTaskMessageStatePair);
+                }
+            }
+        return messages;
+        }
+
+
     }
+
 
     private void writeToLog(String information) {
         System.out.println("Scheduler: " + information);

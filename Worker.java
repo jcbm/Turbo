@@ -21,10 +21,10 @@ public class Worker implements Runnable {
     private int port;
     private String id;
     private SchedulerInfo scheduler;
-    private ArrayList<TaskMessage> allTasks = new ArrayList<>();
-    private ArrayList<TaskMessage> allPriorityTasks = new ArrayList<>();
-    private HashMap<String, List<TaskMessage>> priorityIncomingTasks = new HashMap<>();
-    private HashMap<String, List<TaskMessage>> incomingTasks = new HashMap<>();
+    private ArrayList<SubtaskMessage> allTasks = new ArrayList<>();
+    private ArrayList<SubtaskMessage> allPriorityTasks = new ArrayList<>();
+    private HashMap<String, List<SubtaskMessage>> priorityIncomingTasks = new HashMap<>();
+    private HashMap<String, List<SubtaskMessage>> incomingTasks = new HashMap<>();
     private HashMap<String, List<ReduceTask>> outgoingMessages = new HashMap<>();
     // ReducerID: <Sent result parent id, Sent Result>
     private HashMap<String, HashMap<String, ArrayList<ReduceTask>>> resultBackup = new HashMap<>();
@@ -76,21 +76,21 @@ public class Worker implements Runnable {
                 MessageType type = message.getType();
                 if (type == MessageType.NEWTASK) {
 
-                    TaskMessage task = (TaskMessage) message.getData();
+                    SubtaskMessage task = (SubtaskMessage) message.getData();
                     writeToLog("recieved message - NEW TASK:" + task.getId());
                     // We've got work to do, boys! Enqueue task and notify worker thread - let worker thread deal with it
                     String reducerID = task.getReducer().getID();
                     if (task.getPriority() == TaskPriority.HIGH) {
                         writeToLog("NEW TASK:" + task.getId() + " has high priority");
 
-                        List<TaskMessage> priorityTasks = priorityIncomingTasks.get(reducerID);
+                        List<SubtaskMessage> priorityTasks = priorityIncomingTasks.get(reducerID);
                         if (priorityTasks == null) {
                             priorityTasks = new ArrayList<>();
                         }
                         allPriorityTasks.add(task);
                         priorityTasks.add(task);
                     } else {
-                        List<TaskMessage> ordinaryTasks = incomingTasks.get(reducerID);
+                        List<SubtaskMessage> ordinaryTasks = incomingTasks.get(reducerID);
                         if (ordinaryTasks == null) {
                             ordinaryTasks = new ArrayList<>();
                             incomingTasks.put(reducerID, ordinaryTasks);
@@ -136,15 +136,15 @@ public class Worker implements Runnable {
 
             @Override
             public void run() {
-                List<TaskMessage> taskMessages = priorityIncomingTasks.get(oldReducer);
-                if (taskMessages != null) {
-                    for (TaskMessage msg : taskMessages) {
+                List<SubtaskMessage> subtaskMessages = priorityIncomingTasks.get(oldReducer);
+                if (subtaskMessages != null) {
+                    for (SubtaskMessage msg : subtaskMessages) {
                         msg.setReducer(newReducer);
                     }
                 }
-                List<TaskMessage> incoming = incomingTasks.get(oldReducer);
-                if (taskMessages != null) {
-                    for (TaskMessage msg : incoming) {
+                List<SubtaskMessage> incoming = incomingTasks.get(oldReducer);
+                if (subtaskMessages != null) {
+                    for (SubtaskMessage msg : incoming) {
                         msg.setReducer(newReducer);
                     }
                 }
@@ -189,7 +189,7 @@ public class Worker implements Runnable {
                         syncObject.notify();
                     }
                     writeToLog("A task is available");
-                    TaskMessage task;
+                    SubtaskMessage task;
                     boolean priorityTask = false;
                     if (!priorityIncomingTasks.isEmpty()) {
                         task = allPriorityTasks.get(0);

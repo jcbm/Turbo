@@ -4,7 +4,7 @@ import java.util.Collection;
 /**
  * Created by JC Denton on 09-01-2017.
  */
-public class TaskMessage implements Serializable {
+public class SubtaskMessage implements Serializable {
     private final String id;
     private Function map;
     private Function reduce;
@@ -15,7 +15,7 @@ public class TaskMessage implements Serializable {
     private TaskPriority priority;
     private int splitSize;
 
-    public TaskMessage(String id) {
+    public SubtaskMessage(String id) {
         this.id = id;
     }
 

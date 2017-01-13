@@ -86,4 +86,8 @@ public class TestTask implements Task {
         }
         return new Reducer();
     }
+
+    public int getSplitSize() {
+      return splitSize;
+    }
 }

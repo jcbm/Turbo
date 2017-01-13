@@ -18,4 +18,6 @@ public interface Task extends Serializable {
     public Function getMapFunction();
 
     public Function getReduceFunction();
+
+    public int getSplitSize();
 }

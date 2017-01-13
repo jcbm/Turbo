@@ -10,6 +10,11 @@ public class WorkerInfo {
     private String guid;
     private String address;
     private int port;
+
+    public HashMap<String, HashMap<String, SubTaskData>> getActiveTasks() {
+        return activeTasks;
+    }
+
     // ParentID to HashMap<subtask id to subtaskData> - tells which tasks are waiting to processed/are currently processed
     private HashMap<String, HashMap<String, SubTaskData>> activeTasks = new HashMap<>(); //
     // containedTasks tells which tasks have been completed at the worker, but not yet at the reducer. We don't need a hashMap here, as we send these in a all or none fashion.
@@ -40,6 +45,7 @@ public class WorkerInfo {
 
         }
         tasksForParent.put(subtaskID, subtask);
+        printState();
     }
 
     // we inactivate a task when it is finished, that is, it is removed from the activeset. However, to know
@@ -54,7 +60,6 @@ public class WorkerInfo {
         if (compledTasksForParent == null) {
             compledTasksForParent = new HashMap<>();
             historicalTasks.put(parentID, compledTasksForParent);
-
         }
         compledTasksForParent.put(subtaskID, subTaskData);
         subTaskDataHashMap.remove(subtaskID);
@@ -66,10 +71,13 @@ public class WorkerInfo {
         notFinalizedTasks.add(subTaskData);
         //containedTasks.put(parentID, notFinalizedTasks);
         // maybe  activeTasks.put(parentID, subTaskDataHashMap);
+        System.out.println("WorkerInfo " + guid + " has removed " + subtaskID + " from active set");
+    printState();
     }
 
     // Called when all subtask for a given task has completed
     public void completeAndEvaluateTask(String parentID, int averageCompletionTime) { // we get the average time in the scheduler by using the taskID
+        System.out.println("WorkerInfo " + guid + " completing task " + parentID);
 // go into historical tasks - get each task associated with this parent and getTime;
         HashMap<String, SubTaskData> subTasksForThisTask = historicalTasks.get(parentID);
         Iterator<Map.Entry<String, SubTaskData>> iterator = subTasksForThisTask.entrySet().iterator();
@@ -80,6 +88,7 @@ public class WorkerInfo {
             int taskCompletionTime = subtask.getCompletionTime();
             Evaluation evaluation = new Evaluation(subtaskID, taskCompletionTime, averageCompletionTime);
             evaluations.add(evaluation);
+            printState();
         }
     }
 
@@ -111,7 +120,7 @@ public class WorkerInfo {
     public void printState() {
         System.out.println("---STATE OF WORKER " + guid + " ---");
         String active = isInactive() ? "not active" : "active";
-        System.out.println("Worker is" + active);
+        System.out.println("Worker is " + active);
         System.out.println("Worker is yet to complete:");
         // All tasks that the reducer is either working on currently or have queued for processing
         Iterator it = activeTasks.entrySet().iterator();
@@ -158,8 +167,8 @@ public class WorkerInfo {
             }
             System.out.println(System.lineSeparator());
         }
-        System.out.println("The worker's evaluation scores are'");
-        System.out.println("-----Task-----  ||  ---Score---  ");
+        System.out.println("The worker's evaluation scores are");
+        System.out.println("        -----Task-----  ||  ---Score---  ");
         for (Evaluation evaluation : evaluations) {
             String subtaskId = evaluation.getSubtask();
             EvaluationScore evaluationScore = evaluation.getScore();

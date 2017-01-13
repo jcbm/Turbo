@@ -11,7 +11,7 @@ Make HashMap of <Task, List<Worker>> -- because we know this on sending and the 
 It would be better to save references to data as opposed to actual data in the SubTask objects - Hadoop works with TERABYTEs
 
 
-On worker crash, we know which worker has crashed => use workerinfoobj to get active tasks (a HashMap of parent and children) - get the parents functions and combine them with the collection in the subTaskData to create a new TaskMessage
+On worker crash, we know which worker has crashed => use workerinfoobj to get active tasks (a HashMap of parent and children) - get the parents functions and combine them with the collection in the subTaskData to create a new SubtaskMessage
 On worker up date
 
 http://stackoverflow.com/questions/258120/what-is-the-memory-consumption-of-an-object-in-java
