@@ -317,7 +317,7 @@ public class Worker implements Runnable {
                     try {
                         Socket socket = new Socket(scheduler.getIp(), scheduler.getPort());
                         ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                        Message message = new Message(MessageType.HEARTBEAT, null, id);
+                        Message message = new Message(MessageType.HEARTBEAT, NodeType.WORKER, id);
                         objectOutputStream.writeObject(message);
                         objectOutputStream.close();
                     } catch (UnknownHostException e) {

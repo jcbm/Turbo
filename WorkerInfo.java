@@ -100,7 +100,7 @@ public class WorkerInfo {
         return activeTasks.isEmpty();
     }
 
-    public String getAddress() {
+    public String getIPAddress() {
         return address;
     }
 

@@ -3,9 +3,9 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.logging.SocketHandler;
 
 /**
  * Created by JC Denton on 04-01-2017.
@@ -15,8 +15,6 @@ public class Scheduler implements Runnable {
     private final SchedulingStrategy schedulingStrategy;
     private final int heartBeatFrequencyInMinutes;
     private final int port;
-
-    //TODO: Handle case where a reducer crashes, so it is replaced with another. A worker then crashes
 
     // available reducers to chose from
     private HashMap<String, ReducerInfo> reducers = new HashMap<>(); //
@@ -37,7 +35,7 @@ public class Scheduler implements Runnable {
     private HashMap<String, Task> processedTasks = new HashMap<>();
     // TaskId : Result
     private HashMap<String, Object> results = new HashMap<>();
-    private ConcurrentSkipListMap<String, Date> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
+    private ConcurrentSkipListMap<String, DateNodeTypePair> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
 
 
     //Monitors:
@@ -108,18 +106,21 @@ public class Scheduler implements Runnable {
     }
 
 
-    private void updateHeartbeats(String id, Date recievedWhen) {
-        Date date = new Date();
-        //new HeartBeatInfo(Date, true);
+    private void updateHeartbeats(Message message) {
+        String sender = message.getSender();
         // just in case I screwed up somewhere and a heartbeat is sent after the last task has been completed
-        if (!healthyWorkers.get(id).isInactive()) {
-            heartBeatHashMap.put(id, date);
+        if (!healthyWorkers.get(sender).isInactive()) {
+            NodeType nodeType = (NodeType) message.getData();
+            Date timeReceived = new Date();
+            DateNodeTypePair dateAndNodeType = new DateNodeTypePair(timeReceived, nodeType);
+            heartBeatHashMap.put(sender, dateAndNodeType);
         }
     }
 
-    // will not be called if a worker is detected as crash when task sending is attempted
+    // will not be called if a worker is detected as crashed when task sending is attempted
     private void setWorkerNodeAsActive(String id) {
-        heartBeatHashMap.put(id, new Date()); //
+        DateNodeTypePair dateAndNodeType = new DateNodeTypePair(new Date(), NodeType.WORKER);
+        heartBeatHashMap.put(id, dateAndNodeType); //
     }
 
     private void setWorkerNodeAsInactive(String id) {
@@ -218,6 +219,8 @@ public class Scheduler implements Runnable {
             Random generator = new Random();
             Object[] values = reducers.values().toArray();
             ReducerInfo randomReducer = (ReducerInfo) values[generator.nextInt(values.length)];
+            // store that this reducer is now responsible for this task
+            taskToReducer.put(taskID, randomReducer.getID());
             return randomReducer;
         }
     }
@@ -255,7 +258,7 @@ public class Scheduler implements Runnable {
                 SubtaskMessage subtaskMessage = messageAndState.getMessage();
                 SubTaskData subTaskData = messageAndState.getState();
                 WorkerInfo worker = getWorker();
-                String address = worker.getAddress();
+                String address = worker.getIPAddress();
                 int port = worker.getPort();
 
                 Message message = new Message(MessageType.NEWTASK, subtaskMessage, null);
@@ -343,6 +346,7 @@ public class Scheduler implements Runnable {
                 SubTaskTimer timesForTask = timesForTasks.get(parentID);
                 // will never be null
                 boolean taskCompletedWorkerWise = timesForTask.addTimeAndCheckIfFinalTime(completionTime);
+                // has all workers completed their subtask execution
                 if (taskCompletedWorkerWise) {
                     int averageTime = timesForTask.getAverageTime();
                     List<String> idsOfWorkersResponsibleForTask = workerResponsibleForTask.get(parentID);
@@ -359,10 +363,9 @@ public class Scheduler implements Runnable {
                     // dont check for heartbeat
                     setWorkerNodeAsInactive(sender);
                 }
+
             } else if (type == MessageType.HEARTBEAT) {
-                String sender = message.getSender();
-                Date timeReceived = new Date();
-                updateHeartbeats(sender, timeReceived);
+                updateHeartbeats(message);
             } else if (type == MessageType.RESULT) {
                 Result result = (Result) message.getData();
                 String parentTask = result.getTaskID(); // parent task - now we need to know who worked on this task => get children of task, look up their responsibleWorker
@@ -372,13 +375,16 @@ public class Scheduler implements Runnable {
                     responsibleWorker.finalizeTask(parentTask);
                 }
 
-                //ArrayList<Task> subJobs = parentToChildrenTaskMap.get(parentTask);
                 writeToLog("recieved result " + result.getResult() + " from task " + result.getTaskID());
                 results.put(parentTask, result.getResult());
 
             }
         }
     }
+
+    /*
+    Failure detection builds on heart beats.
+     */
 
     class FailureDetector implements Runnable {
         private final long ONE_MINUTE_IN_MILLIS = 60000;
@@ -392,92 +398,138 @@ public class Scheduler implements Runnable {
                 Calendar cal = Calendar.getInstance();
                 while (it.hasNext()) {
                     Map.Entry pair = (Map.Entry) it.next();
-                    Date lastTimeOfHeartBeat = (Date) pair.getValue();
+                    DateNodeTypePair dateAndNodeType = (DateNodeTypePair) pair.getValue();
+                    Date lastTimeOfHeartBeat = dateAndNodeType.getLastHeartBeat();
                     cal.setTime(lastTimeOfHeartBeat);
                     // have x minutes gone by since we last heard from this - check that Date.now is not before the last time of heartbeat + x minutes (If now is 12.00 and time limit is 5 minutes, then last heartBeat would have to be at 11.55 it would be before now)
                     long timeInMilis = cal.getTimeInMillis();
                     Date lastHeartBeatPlusTimeLimit = new Date(timeInMilis + (heartBeatFrequencyInMinutes * ONE_MINUTE_IN_MILLIS));
-                    if (now.before(lastHeartBeatPlusTimeLimit)) {
-                        // node has crashed - this handles worker
-                        String nodeId = (String) pair.getKey();
-                        removeNodeAndResendActiveTasks(nodeId);
-                        it.remove();
-                        // for reducer we need to know which tasks it is responsible -- TODO find good way to know if type of node is worker or reducer
-                       // dont assign this reducer to anything anymore
-                        reducers.remove(nodeId);
 
-                        List<String> taskIDs = tasksThatReducerIsResponsibleFor.get(nodeId);
-                        // for every task, we need to tell the workers responsible for a subtask that it should use a new reducer
-HashSet<String> workersToNotify = new HashSet<>();
-                        for (String taskID : taskIDs ) {
-                            List<String> workersForTask = workerResponsibleForTask.get(taskID);
-                            for (String workerForTask : workersForTask) {
-                                // Using a set here as a worker may be associated with several tasks, but we only want to notify it once
-                                workersToNotify.add(workerForTask)
+                    String nodeId = (String) pair.getKey();
+
+                    // Last heartbeat has expired - we assume the node is dead
+                    if (now.after(lastHeartBeatPlusTimeLimit)) {
+                        if (dateAndNodeType.getNodeType() == NodeType.WORKER) {
+                            // node has crashed - this handles worker
+                            writeToLog("Crash occurred - worker " + nodeId);
+                            removeNodeAndResendActiveTasks(nodeId);
+                            it.remove();
+                        } else {
+                            writeToLog("Crash occurred - reducer " + nodeId);
+                            // dont assign this reducer to anything anymore
+                            reducers.remove(nodeId);
+                            List<String> taskIDs = tasksThatReducerIsResponsibleFor.get(nodeId);
+                            // for every task, we need to tell the workers responsible for a subtask that it should use a new reducer
+                            HashSet<String> workersToNotify = new HashSet<>();
+
+                            boolean firstTask = true;
+                            for (String taskID : taskIDs) {
+                                List<String> workersForTask = workerResponsibleForTask.get(taskID);
+                                for (String workerForTask : workersForTask) {
+                                    // Using a set here as a worker may be associated with several tasks, but we only want to notify it once and then it will take care of all tasks associated with the reducer
+                                    workersToNotify.add(workerForTask);
+                                }
+                            }
+
+                            ReducerInfo newReducer = replaceTaskReducerMappingsAndAssignSameReducerToAll(taskIDs);
+                            ReducerSwitchMessage reducerSwitchMessage = new ReducerSwitchMessage(nodeId, newReducer);//get a new reducer and inform workers
+                            Message message = new Message(MessageType.REDUCERFAILED, reducerSwitchMessage, null); // id is irrelevant here
+                            for (String worker : workersToNotify) {
+                                WorkerInfo workerInfo = healthyWorkers.get(worker);
+                                sendInformation(workerInfo, message);
                             }
                         }
-                        ReducerSwitchMessage reducerSwitchMessage = new ReducerSwitchMessage(nodeId, getNewReducer());//get a new reducer and inform workers
-                        Message message =  new Message(MessageType.REDUCERFAILED, reducerSwitchMessage, null); // id is irrelevant here
-                        for (String worker : workersToNotify) {
-                            WorkerInfo workerInfo = healthyWorkers.get(worker);
-                            workerInfo.getAddress();
-                            workerInfo.getPort();
-                            Socket socket = new Socket();
-                        }
                     }
-
-
                 }
             }
         }
 
-        private void removeNodeAndResendActiveTasks(String nodeId) {
-            // Get the info for the failed node
-            WorkerInfo failedNode = healthyWorkers.get(nodeId);
-            // worker can no longer be selected for work
-            availableWorkers.remove(nodeId);
-            healthyWorkers.remove(nodeId);
-            // get the worker's active tasks - they have to go to the same reducer as originally destined
-            ArrayList<SubTaskMessageStatePair> subTaskMessageStatePairs = generateNewTasks(failedNode);
-            sendTask(subTaskMessageStatePairs);
 
+        /*
+        Generic method for establishing a socket to the worker and sending a message
+         */
+
+        private ReducerInfo replaceTaskReducerMappingsAndAssignSameReducerToAll(List<String> taskIDs) {
+            ReducerInfo reducer = null;
+            boolean first = true;
+            for (String taskid : taskIDs) {
+                // remove pre-existing mapping to crashed reducer
+                taskToReducer.remove(taskid);
+                if (first) {
+                    // getNewReducer will put the new mapping in taskToReducer
+                    // we only retrieve a new reducer once as all tasks
+                    reducer = getNewReducer(taskid);
+                    first = false;
+                } else {
+                    taskToReducer.put(taskid, reducer.getID());
+                }
+            }
+            return reducer;
         }
 
 
-        private ArrayList<SubTaskMessageStatePair> generateNewTasks(WorkerInfo worker) {
+        public void sendInformation(WorkerInfo workerInfo, Message message) {
+            String ipAddress = workerInfo.getIPAddress();
+            int port = workerInfo.getPort();
+            try {
+                Socket socket = new Socket(ipAddress, port);
+                ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+                objectOutputStream.writeObject(message);
+                objectOutputStream.close();
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+
+    }
+
+    private void removeNodeAndResendActiveTasks(String nodeId) {
+        // Get the info for the failed node
+        WorkerInfo failedNode = healthyWorkers.get(nodeId);
+        // worker can no longer be selected for work
+        availableWorkers.remove(nodeId);
+        healthyWorkers.remove(nodeId);
+        // get the worker's active tasks - they have to go to the same reducer as originally destined
+        ArrayList<SubTaskMessageStatePair> subTaskMessageStatePairs = generateNewTasks(failedNode);
+        sendTask(subTaskMessageStatePairs);
+
+    }
+
+
+    private ArrayList<SubTaskMessageStatePair> generateNewTasks(WorkerInfo worker) {
 // combine the data in every TaskDataObject from the WorkerInfo with the original tasks
-            // for every task and for every subtask associated with the task
-            ArrayList<SubTaskMessageStatePair> messages = new ArrayList<>();
-            HashMap<String, HashMap<String, SubTaskData>> lostTasks = worker.getActiveTasks();
-            Iterator it = lostTasks.entrySet().iterator();
-            while (it.hasNext()) {
-                Map.Entry pair = (Map.Entry) it.next();
-                String parentTask = (String) pair.getKey();
-                HashMap<String, SubTaskData> subtasksForParent = (HashMap) pair.getValue();
-                Iterator subtaskIterator = subtasksForParent.entrySet().iterator();
-                Task originalTask = processedTasks.get(parentTask);
-                while (subtaskIterator.hasNext()) {
-                    Map.Entry subTaskIdSubtaskPair = (Map.Entry) subtaskIterator.next();
-                    String subTaskId = (String) subTaskIdSubtaskPair.getKey();
-                    SubTaskData subTaskData = (SubTaskData) subTaskIdSubtaskPair.getValue();
+        // for every task and for every subtask associated with the task
+        ArrayList<SubTaskMessageStatePair> messages = new ArrayList<>();
+        HashMap<String, HashMap<String, SubTaskData>> lostTasks = worker.getActiveTasks();
+        Iterator it = lostTasks.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry pair = (Map.Entry) it.next();
+            String parentTask = (String) pair.getKey();
+            HashMap<String, SubTaskData> subtasksForParent = (HashMap) pair.getValue();
+            Iterator subtaskIterator = subtasksForParent.entrySet().iterator();
+            Task originalTask = processedTasks.get(parentTask);
+            while (subtaskIterator.hasNext()) {
+                Map.Entry subTaskIdSubtaskPair = (Map.Entry) subtaskIterator.next();
+                String subTaskId = (String) subTaskIdSubtaskPair.getKey();
+                SubTaskData subTaskData = (SubTaskData) subTaskIdSubtaskPair.getValue();
 
-                    SubtaskMessage newTask = new SubtaskMessage(subTaskId);
-                    newTask.setMap(originalTask.getMapFunction());
-                    newTask.setReduce(originalTask.getReduceFunction());
-                    newTask.setData((Collection) subTaskData.getData());
-                    newTask.setReducer(getNewReducer(parentTask));
-                    newTask.setName(originalTask.getName());
-                    newTask.setParentId(parentTask);
-                    newTask.setSplitSize(originalTask.getSplitSize());
-                    // note that the old task can simply be reused - it's just put into another workers workerinfo object
-                    SubTaskMessageStatePair subTaskMessageStatePair = new SubTaskMessageStatePair(newTask, subTaskData);
-                    messages.add(subTaskMessageStatePair);
-                }
+                SubtaskMessage newTask = new SubtaskMessage(subTaskId);
+                newTask.setMap(originalTask.getMapFunction());
+                newTask.setReduce(originalTask.getReduceFunction());
+                newTask.setData((Collection) subTaskData.getData());
+                newTask.setReducer(getNewReducer(parentTask));
+                newTask.setName(originalTask.getName());
+                newTask.setParentId(parentTask);
+                newTask.setSplitSize(originalTask.getSplitSize());
+                // note that the old task can simply be reused - it's just put into another workers workerinfo object
+                SubTaskMessageStatePair subTaskMessageStatePair = new SubTaskMessageStatePair(newTask, subTaskData);
+                messages.add(subTaskMessageStatePair);
             }
-        return messages;
         }
-
-
+        return messages;
     }
 
 
