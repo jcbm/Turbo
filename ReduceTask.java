@@ -11,13 +11,15 @@ A class to send jobs to the reducer. There's no need to include all the info tha
  */
 
 public class ReduceTask implements Serializable{
+    private String subtaskID;
     private String parentTaskID;
     private final Object data;
     private final Function reduce;
     private final int splitSize;
 
-    public ReduceTask(String parentTaskID, Object data, Function reduce, int splitSize) {
+    public ReduceTask(String parentTaskID, String subTaskID, Object data, Function reduce, int splitSize) {
         this.parentTaskID = parentTaskID;
+        this.subtaskID = subTaskID;
         this.data = data;
         this.reduce = reduce;
         this.splitSize = splitSize;
@@ -37,5 +39,9 @@ public class ReduceTask implements Serializable{
 
     public String getParentTaskID() {
         return parentTaskID;
+    }
+
+    public String getSubTaskID() {
+        return subtaskID;
     }
 }

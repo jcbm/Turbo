@@ -26,7 +26,7 @@ public class Scheduler implements Runnable {
 
     // All id's of workers that are not working on anything currently
     private List<String> availableWorkers = new ArrayList<>();
-    private HashMap<String, WorkerInfo> healthyWorkers = new HashMap<>();  // WorkerId --> WorkerInfo
+    private HashMap<String, WorkerInfo> allWorkers = new HashMap<>();  // WorkerId --> WorkerInfo
     private HashMap<String, List<String>> workerResponsibleForTask = new HashMap<>(); // Look up the workers who have active tasks for
 
     private List<Task> tasks = new ArrayList<>();
@@ -40,7 +40,7 @@ public class Scheduler implements Runnable {
 
     //Monitors:
     private Object tasksForSending = new Object();
-
+    boolean debug;
 
     public Scheduler(List<WorkerInfo> workers, List<ReducerInfo> reducers, SchedulingStrategy schedulingStrategy, int heartBeatFrequencyInMinutes, int port) throws Exception {
         this.workers = workers;
@@ -69,7 +69,7 @@ public class Scheduler implements Runnable {
         for (WorkerInfo worker : workers) {
 
             availableWorkers.add(worker.getGUID());
-            healthyWorkers.put(worker.getGUID(), worker);
+            allWorkers.put(worker.getGUID(), worker);
         }
     }
     /*
@@ -78,6 +78,10 @@ public class Scheduler implements Runnable {
 
     public void addTask(Task task) {
         tasks.add(task);
+    }
+
+    public void activateDebug() {
+        debug = true;
     }
 
     /**
@@ -109,7 +113,7 @@ public class Scheduler implements Runnable {
     private void updateHeartbeats(Message message) {
         String sender = message.getSender();
         // just in case I screwed up somewhere and a heartbeat is sent after the last task has been completed
-        if (!healthyWorkers.get(sender).isInactive()) {
+        if (!allWorkers.get(sender).isInactive()) {
             NodeType nodeType = (NodeType) message.getData();
             Date timeReceived = new Date();
             DateNodeTypePair dateAndNodeType = new DateNodeTypePair(timeReceived, nodeType);
@@ -151,11 +155,12 @@ public class Scheduler implements Runnable {
                 // An iterator is used here so that a task can be removed when it has been processed
                 for (Iterator<Task> iter = tasks.listIterator(); iter.hasNext(); ) {
                     Task task = iter.next();
+                    writeToLog("Splitting " + task.getName());
                     Collection data = task.getData();
-                    //List[] subjobs; // split size is provided in data
                     // if there are more workers than elements in the data, split into single elements. Else, split after number of workers. A task can provide it's own split size, and throw the default value away in the split() method.
-                    int splitSize = data.size() < healthyWorkers.size() ? data.size() : healthyWorkers.size();
+                    int splitSize = 0;
                     ArrayList<SubTaskMessageStatePair> subjobs = createSubjobs(task, task.split(data, splitSize));
+                    writeToLog(task.getName() + " has been split into " + subjobs.size() + " subtasks");
                     sendTask(subjobs);
                     iter.remove();
                 }
@@ -237,7 +242,7 @@ public class Scheduler implements Runnable {
         public void run() {
             while (true) {
                 // Notify when worker is ready
-                if (tasks.isEmpty() || healthyWorkers.isEmpty()) {
+                if (tasks.isEmpty() || allWorkers.isEmpty()) {
                     try {
                         tasksForSending.wait();
                     } catch (InterruptedException e) {
@@ -253,64 +258,64 @@ public class Scheduler implements Runnable {
 
     // called by scheduling strategy
     private void sendTask(ArrayList<SubTaskMessageStatePair> subJobs) {
-        try {
-            for (SubTaskMessageStatePair messageAndState : subJobs) {
-                SubtaskMessage subtaskMessage = messageAndState.getMessage();
-                SubTaskData subTaskData = messageAndState.getState();
-                WorkerInfo worker = getWorker();
-                String address = worker.getIPAddress();
-                int port = worker.getPort();
-
-                Message message = new Message(MessageType.NEWTASK, subtaskMessage, null);
-                Socket socket = new Socket(address, port);
-                ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                objectOutputStream.writeObject(message);
-                objectOutputStream.close();
-                String parentID = subtaskMessage.getParentId();
-                // Save which worker is responsible for subtasks of this parent
-                List<String> responsibleWorkersForParentTasks = workerResponsibleForTask.get(parentID);
-                if (responsibleWorkersForParentTasks == null) {
-                    responsibleWorkersForParentTasks = new ArrayList<>();
-                    workerResponsibleForTask.put(parentID, responsibleWorkersForParentTasks);
-                }
-                responsibleWorkersForParentTasks.add(worker.getGUID());
-                // only register as one of the nodes tasks if actually succeeds in sending
-                worker.addActiveTask(subTaskData);
-                setWorkerNodeAsActive(worker.getGUID());
-                String reducerId = subtaskMessage.getReducer().getID();
-// Store that the reducer is responsible for this given task
-                List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
-                if (tasksAtReducer == null) {
-                    tasksAtReducer = new ArrayList<>();
-                    tasksThatReducerIsResponsibleFor.put(reducerId, tasksAtReducer);
-                }
-                tasksAtReducer.add(parentID);
+        for (SubTaskMessageStatePair messageAndState : subJobs) {
+            SubtaskMessage subtaskMessage = messageAndState.getMessage();
+            SubTaskData subTaskData = messageAndState.getState();
+            WorkerInfo worker = getWorker();
+            writeToLog("Attempting to send subtask " + subtaskMessage.getId() + " to " + worker.getGUID());
+            Message message = new Message(MessageType.NEWTASK, subtaskMessage, null);
+            sendInformation(worker, message);
+            String parentID = subtaskMessage.getParentId();
+            // Save which worker is responsible for subtasks of this parent
+            List<String> responsibleWorkersForParentTasks = workerResponsibleForTask.get(parentID);
+            if (responsibleWorkersForParentTasks == null) {
+                responsibleWorkersForParentTasks = new ArrayList<>();
+                workerResponsibleForTask.put(parentID, responsibleWorkersForParentTasks);
             }
-        } catch (IOException e) {
-            System.out.println("Scheduler.sendTask() failed. Could not send task ");
-            // save all receivers GUIDs of a task to a HashMap so that we can move the info from the
 
+            String workerid = worker.getGUID();
+            if (!responsibleWorkersForParentTasks.contains(workerid)) {
+                // Don't add the same worker multiple times to the list - alternatively, maybe use a set
+                responsibleWorkersForParentTasks.add(worker.getGUID());
+            }
+            // only register as one of the nodes tasks if actually succeeds in sending
+            worker.addActiveTask(subTaskData);
+            setWorkerNodeAsActive(worker.getGUID());
+            String reducerId = subtaskMessage.getReducer().getID();
+// Store that the reducer is responsible for this given task
+            List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
+            if (tasksAtReducer == null) {
+                tasksAtReducer = new ArrayList<>();
+                tasksThatReducerIsResponsibleFor.put(reducerId, tasksAtReducer);
+            }
+            tasksAtReducer.add(parentID);
         }
+
     }
 
     // This is the scheduling algorithm. It sucks currently.
     public WorkerInfo getWorker() {
         // pick first avilable worker if anybody is available
         WorkerInfo workerInfo;
+
         if (!availableWorkers.isEmpty()) {
             String worker = availableWorkers.get(0);
-            workerInfo = healthyWorkers.get(worker);
+            workerInfo = allWorkers.get(worker);
             availableWorkers.remove(0);
         } else {
             // send to random already busy worker
             Random generator = new Random();
-            Object[] values = healthyWorkers.values().toArray();
+            Object[] values = allWorkers.values().toArray();
             workerInfo = (WorkerInfo) values[generator.nextInt(values.length)];
 
         }
         return workerInfo;
     }
 
+    /**
+     * A thread that functions as the server and recieves information from the worker and reducer nodes
+     * Information is recieved when:
+     */
     public class NetWorkListener implements Runnable {
 
         private Socket socket;
@@ -336,33 +341,7 @@ public class Scheduler implements Runnable {
             }
             MessageType type = message.getType();
             if (type == MessageType.FINISHEDTASK) {
-                String sender = message.getSender();
-                String subtaskID = message.getTask();
-                Integer completionTime = (Integer) message.getData();
-                WorkerInfo worker = healthyWorkers.get(sender);
-// Save time in WorkerInfo
-                String parentID = subTaskIDToTaskId.get(subtaskID);
-                worker.inactivateTask(parentID, subtaskID, completionTime);
-                SubTaskTimer timesForTask = timesForTasks.get(parentID);
-                // will never be null
-                boolean taskCompletedWorkerWise = timesForTask.addTimeAndCheckIfFinalTime(completionTime);
-                // has all workers completed their subtask execution
-                if (taskCompletedWorkerWise) {
-                    int averageTime = timesForTask.getAverageTime();
-                    List<String> idsOfWorkersResponsibleForTask = workerResponsibleForTask.get(parentID);
-                    for (String id : idsOfWorkersResponsibleForTask) {
-                        WorkerInfo responsibleWorker = healthyWorkers.get(id);
-                        responsibleWorker.completeAndEvaluateTask(parentID, averageTime);
-                    }
-                }
-
-                if (worker.isInactive()) { // worker is inactive if it has no tasks to finish
-                    writeToLog("Worker " + sender + " is available again");
-                    // now available  for selection again
-                    availableWorkers.add(sender);
-                    // dont check for heartbeat
-                    setWorkerNodeAsInactive(sender);
-                }
+                finishTask(message);
 
             } else if (type == MessageType.HEARTBEAT) {
                 updateHeartbeats(message);
@@ -371,7 +350,7 @@ public class Scheduler implements Runnable {
                 String parentTask = result.getTaskID(); // parent task - now we need to know who worked on this task => get children of task, look up their responsibleWorker
                 List<String> idsOfWorkersResponsibleForTask = workerResponsibleForTask.get(parentTask);
                 for (String id : idsOfWorkersResponsibleForTask) {
-                    WorkerInfo responsibleWorker = healthyWorkers.get(id);
+                    WorkerInfo responsibleWorker = allWorkers.get(id);
                     responsibleWorker.finalizeTask(parentTask);
                 }
 
@@ -379,6 +358,38 @@ public class Scheduler implements Runnable {
                 results.put(parentTask, result.getResult());
 
             }
+        }
+
+        private void finishTask(Message message) {
+            String sender = message.getSender();
+            String subtaskID = message.getTask();
+            Long completionTime = (Long) message.getData();
+            WorkerInfo worker = allWorkers.get(sender);
+            // Save time in WorkerInfo
+            String parentID = subTaskIDToTaskId.get(subtaskID);
+            worker.inactivateTask(parentID, subtaskID, completionTime);
+            SubTaskTimer timesForTask = timesForTasks.get(parentID);
+            if (timesForTask != null) {
+                boolean taskCompletedWorkerWise = timesForTask.addTimeAndCheckIfFinalTime(completionTime);
+                // has all workers completed their subtask execution
+                if (taskCompletedWorkerWise) {
+                    int averageTime = timesForTask.getAverageTime();
+                    timesForTasks.remove(parentID);
+                    List<String> idsOfWorkersResponsibleForTask = workerResponsibleForTask.get(parentID);
+                    for (String id : idsOfWorkersResponsibleForTask) {
+                        WorkerInfo responsibleWorker = allWorkers.get(id);
+                        responsibleWorker.completeAndEvaluateTask(parentID, averageTime);
+                    }
+                }
+            }
+            if (worker.isInactive()) { // worker is inactive if it has no tasks to finish
+                writeToLog("Worker " + sender + " is available again");
+                // now available  for selection again
+                availableWorkers.add(sender);
+                // dont check for heartbeat
+                setWorkerNodeAsInactive(sender);
+            }
+
         }
     }
 
@@ -420,9 +431,8 @@ public class Scheduler implements Runnable {
                             reducers.remove(nodeId);
                             List<String> taskIDs = tasksThatReducerIsResponsibleFor.get(nodeId);
                             // for every task, we need to tell the workers responsible for a subtask that it should use a new reducer
-                            HashSet<String> workersToNotify = new HashSet<>();
 
-                            boolean firstTask = true;
+                            HashSet<String> workersToNotify = new HashSet<>();
                             for (String taskID : taskIDs) {
                                 List<String> workersForTask = workerResponsibleForTask.get(taskID);
                                 for (String workerForTask : workersForTask) {
@@ -435,7 +445,7 @@ public class Scheduler implements Runnable {
                             ReducerSwitchMessage reducerSwitchMessage = new ReducerSwitchMessage(nodeId, newReducer);//get a new reducer and inform workers
                             Message message = new Message(MessageType.REDUCERFAILED, reducerSwitchMessage, null); // id is irrelevant here
                             for (String worker : workersToNotify) {
-                                WorkerInfo workerInfo = healthyWorkers.get(worker);
+                                WorkerInfo workerInfo = allWorkers.get(worker);
                                 sendInformation(workerInfo, message);
                             }
                         }
@@ -468,30 +478,30 @@ public class Scheduler implements Runnable {
         }
 
 
-        public void sendInformation(WorkerInfo workerInfo, Message message) {
-            String ipAddress = workerInfo.getIPAddress();
-            int port = workerInfo.getPort();
-            try {
-                Socket socket = new Socket(ipAddress, port);
-                ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-                objectOutputStream.writeObject(message);
-                objectOutputStream.close();
-            } catch (UnknownHostException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+    }
 
+
+    public void sendInformation(WorkerInfo workerInfo, Message message) {
+        String ipAddress = workerInfo.getIPAddress();
+        int port = workerInfo.getPort();
+        try {
+            Socket socket = new Socket(ipAddress, port);
+            ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+            objectOutputStream.writeObject(message);
+            objectOutputStream.close();
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
-
     }
 
     private void removeNodeAndResendActiveTasks(String nodeId) {
         // Get the info for the failed node
-        WorkerInfo failedNode = healthyWorkers.get(nodeId);
+        WorkerInfo failedNode = allWorkers.get(nodeId);
         // worker can no longer be selected for work
         availableWorkers.remove(nodeId);
-        healthyWorkers.remove(nodeId);
+        allWorkers.remove(nodeId);
         // get the worker's active tasks - they have to go to the same reducer as originally destined
         ArrayList<SubTaskMessageStatePair> subTaskMessageStatePairs = generateNewTasks(failedNode);
         sendTask(subTaskMessageStatePairs);

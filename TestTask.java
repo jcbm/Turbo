@@ -7,11 +7,18 @@ import java.util.List;
  */
 public class TestTask implements Task {
 
+    private String name;
     private int splitSize;
 
     public TestTask(int splitSize) {
         this.splitSize = splitSize;
     }
+
+    public TestTask(String name, int splitSize) {
+        this.splitSize = splitSize;
+    this.name = name;
+    }
+
 
     @Override
     public Collection getData() {
@@ -26,7 +33,7 @@ public class TestTask implements Task {
     }
 
     @Override
-    public Collection<Collection> split(Collection data, int splitSize) {
+    public Collection<Collection> split(Collection data, int throwawy) { //todo: remove int arg from interface
         Collection<Collection> collections = new ArrayList<>(splitSize);
         int sizeOfSubCollections = data.size() / splitSize;
 
@@ -34,16 +41,16 @@ public class TestTask implements Task {
         //
         int firstElementOfSublist = 0;
         for (int i = 0; i < splitSize; i++) {
-            ArrayList<Integer> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist, firstElementOfSublist + splitSize));
+            ArrayList<Integer> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist, firstElementOfSublist + 3));
             collections.add(subCollection);
-            firstElementOfSublist += splitSize;
+            firstElementOfSublist += 3;
         }
         return collections;
     }
 
     @Override
     public String getName() {
-        return "Test";
+        return name;
     }
 
     @Override

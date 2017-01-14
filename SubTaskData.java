@@ -5,7 +5,7 @@ import java.util.ArrayList;
  */
 public class SubTaskData {
 
-    private int completionTime;
+    private long completionTime;
 
     public String getId() {
         return id;
@@ -30,11 +30,11 @@ public class SubTaskData {
         this.parentID = parentID;
     }
 
-    public void setCompletionTime(int completionTime) {
+    public void setCompletionTime(long completionTime) {
         this.completionTime = completionTime;
     }
 
-    public int getCompletionTime() {
+    public long getCompletionTime() {
         return completionTime;
     }
 }

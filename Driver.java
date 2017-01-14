@@ -6,14 +6,13 @@ import java.util.ArrayList;
 public class Driver {
 
     public static void main(String[] args) {
-        int numberOfWorkers = 3;// Integer.parseInt(args[0]);
-        int numberOfReducers = 1; // Integer.parseInt(args[1]);
+        int numberOfWorkers = 30;// Integer.parseInt(args[0]);
+        int numberOfReducers = 3; // Integer.parseInt(args[1]);
         SchedulingStrategy schedulingStrategy = new BasicScheduler();
         String localHost = "localhost";
         int schedulerPort = 8080;
         int workerStartport = 4000;
-        int splitSize = 3;
-        ArrayList<Worker> workers = new ArrayList<>();
+        int splitSize = 10;
         ArrayList<WorkerInfo> workerInfos = new ArrayList<>();
         int heartBeatFrequency = 5;
         SchedulerInfo schedulerInfo = new SchedulerInfo(localHost, schedulerPort, heartBeatFrequency);
@@ -38,7 +37,9 @@ public class Driver {
         }
         try {
             Scheduler scheduler = new Scheduler(workerInfos, reducerInfos, schedulingStrategy, heartBeatFrequency, schedulerPort);
-            scheduler.addTask(new TestTask(splitSize));
+            scheduler.activateDebug();
+            scheduler.addTask(new TestTask("Test task 1", splitSize));
+           scheduler.addTask(new TestTask("Test task 2", splitSize));
         new Thread(scheduler).start();
         } catch (Exception e) {
             e.printStackTrace();

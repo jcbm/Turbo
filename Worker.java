@@ -29,7 +29,7 @@ public class Worker implements Runnable {
     // ReducerID: <Sent result parent id, Sent Result>
     private HashMap<String, HashMap<String, ArrayList<ReduceTask>>> resultBackup = new HashMap<>();
     private HashSet<String> bannedReducers = new HashSet<>();
-    private int taskCount;
+
     private boolean processingTasks;
     // MonitorObjects
     private Object syncObject = new Object();
@@ -99,7 +99,6 @@ public class Worker implements Runnable {
                         ordinaryTasks.add(task);
                     }
 
-                    taskCount++;
                     // notify taskWorker thread
                     synchronized (tasksAvailable) {
                         tasksAvailable.notifyAll();
@@ -182,12 +181,12 @@ public class Worker implements Runnable {
                     } catch (InterruptedException e) {
 
                     }
+                }
                     // we've been awakened - tell heartbeat that we are active
-// TODO: start timer
                     processingTasks = true;
                     synchronized (syncObject) {
                         syncObject.notify();
-                    }
+
                     writeToLog("A task is available");
                     SubtaskMessage task;
                     boolean priorityTask = false;
@@ -201,15 +200,17 @@ public class Worker implements Runnable {
                         allTasks.remove(0);
                     }
                     writeToLog("processing task " + task.getId());
-                    Function map = task.getMap();
+                        long startTime = System.nanoTime();
+                        Function map = task.getMap();
                     Collection data = task.getData();
                     // it's up to the reduce function to cast result to something else
                     Object result = map.execute(data);
-                    ReduceTask reduceTask = new ReduceTask(task.getParentId(), result, task.getReduce(), task.getSplitSize());
-                    // TODO: stop timer - inform scheduler of time and status
+                    ReduceTask reduceTask = new ReduceTask(task.getParentId(), task.getId(), result, task.getReduce(), task.getSplitSize());
+                    //  stop timer - inform scheduler of time and status
+                        long estimatedTime = System.nanoTime() - startTime;
                     String schedulerIp = scheduler.getIp();
                     int schedulerPort = scheduler.getPort();
-                    Integer timeToComplete = 500; //fixme
+                    Long timeToComplete = estimatedTime; //fixme
                     Message message = new Message(MessageType.FINISHEDTASK, timeToComplete, id, task.getId());
                     try {
                         Socket socketToScheduler = new Socket(schedulerIp, schedulerPort);

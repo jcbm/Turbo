@@ -58,7 +58,7 @@ public class Reducer implements Runnable {
                 ObjectInputStream inputStream = new ObjectInputStream(socket.getInputStream());
                 ReduceTask task = (ReduceTask) inputStream.readObject();
                 inputStream.close();
-                logInfo("recieved a new subtask for" + task.getParentTaskID());
+                logInfo("Rcieved a subtask " + task.getSubTaskID() + " for" + task.getParentTaskID());
                 String parentTaskID = task.getParentTaskID();
                 Collection<Object> subresults = taskData.get(parentTaskID);
                 if (subresults == null) {

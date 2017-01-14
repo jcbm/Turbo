@@ -1,23 +1,18 @@
 import java.io.Serializable;
 import java.util.Collection;
 
-/**
- * Created by JC Denton on 04-01-2017.
- */
+
 public interface Task extends Serializable {
 
-    //private Function mapFunction;
-    //private Function reduceFunction;
-// private TaskType;
-    public Collection getData();// { return null; // TODO: Replace w. old interface}
+    Collection getData();//
 
-    public Collection<Collection> split(Collection data, int splitSize);
+    Collection<Collection> split(Collection data, int splitSize);
 
-    public String getName();
+    String getName();
 
-    public Function getMapFunction();
+    Function getMapFunction();
 
-    public Function getReduceFunction();
+    Function getReduceFunction();
 
-    public int getSplitSize();
+    int getSplitSize();
 }

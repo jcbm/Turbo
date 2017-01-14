@@ -8,23 +8,25 @@ import java.util.ArrayList;
 This class is created when the subtasks are created
  */
 public class SubTaskTimer {
-    private ArrayList<Integer> times = new ArrayList<>();
+    private ArrayList<Long> times = new ArrayList<>();
     private int splitsize;
+    private boolean notFinalized = true;
 
     public SubTaskTimer(int splitsize) {
 
         this.splitsize = splitsize;
     }
 
-    public boolean addTimeAndCheckIfFinalTime (int time) {
+    public boolean addTimeAndCheckIfFinalTime (long time) {
    times.add(time);
-        return times.size() == splitsize;
+       boolean finalTime = times.size() == splitsize;
+        return finalTime;
     }
 
    public int getAverageTime() {
        int totalTime = 0;
        int averageTime;
-       for (int time : times) {
+       for (long time : times) {
           totalTime += time;
        }
        averageTime = totalTime / splitsize;

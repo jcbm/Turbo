@@ -49,7 +49,7 @@ public class WorkerInfo {
     }
 
     // we inactivate a task when it is finished, that is, it is removed from the activeset. However, to know
-    public void inactivateTask(String parentID, String subtaskID, int completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
+    public void inactivateTask(String parentID, String subtaskID, long completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
         //should never return null, so we can be sure we get a collection
         System.out.println("WorkerInfo " + guid + " is removing " + subtaskID + " from active set");
         HashMap<String, SubTaskData> subTaskDataHashMap = activeTasks.get(parentID);
@@ -76,7 +76,7 @@ public class WorkerInfo {
     }
 
     // Called when all subtask for a given task has completed
-    public void completeAndEvaluateTask(String parentID, int averageCompletionTime) { // we get the average time in the scheduler by using the taskID
+    public void completeAndEvaluateTask(String parentID, long averageCompletionTime) { // we get the average time in the scheduler by using the taskID
         System.out.println("WorkerInfo " + guid + " completing task " + parentID);
 // go into historical tasks - get each task associated with this parent and getTime;
         HashMap<String, SubTaskData> subTasksForThisTask = historicalTasks.get(parentID);
@@ -85,7 +85,7 @@ public class WorkerInfo {
             Map.Entry pair = (Map.Entry) iterator.next();
             SubTaskData subtask = (SubTaskData) pair.getValue();
             String subtaskID = subtask.getId();
-            int taskCompletionTime = subtask.getCompletionTime();
+            long taskCompletionTime = subtask.getCompletionTime();
             Evaluation evaluation = new Evaluation(subtaskID, taskCompletionTime, averageCompletionTime);
             evaluations.add(evaluation);
             printState();
@@ -118,6 +118,7 @@ public class WorkerInfo {
     For debugging - Get all stored values in a user-friendly format
      */
     public void printState() {
+        if (1 == 1) return;
         System.out.println("---STATE OF WORKER " + guid + " ---");
         String active = isInactive() ? "not active" : "active";
         System.out.println("Worker is " + active);
@@ -168,7 +169,7 @@ public class WorkerInfo {
             System.out.println(System.lineSeparator());
         }
         System.out.println("The worker's evaluation scores are");
-        System.out.println("        -----Task-----  ||  ---Score---  ");
+        System.out.println("---------------Task------------------ ||  ---Score---  ");
         for (Evaluation evaluation : evaluations) {
             String subtaskId = evaluation.getSubtask();
             EvaluationScore evaluationScore = evaluation.getScore();

@@ -5,12 +5,12 @@ public class Evaluation {
     private final String subtask;
     private final EvaluationScore score;
 
-    public Evaluation(String subtaskId, int time, int averageTime) {
+    public Evaluation(String subtaskId, long time, long averageTime) {
         this.subtask = subtaskId;
         this.score = calculateScore(time, averageTime); // fixme - it's possible, but horrible practice to call same-object methods in constructor
     }
 
-    private EvaluationScore calculateScore(int workersTime, int averageWorkerTime) {
+    private EvaluationScore calculateScore(long workersTime, long averageWorkerTime) {
  // fixme: silly measure
         EvaluationScore score = null;
         if (workersTime == averageWorkerTime) {
