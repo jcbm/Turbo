@@ -1,3 +1,5 @@
+package TurboFramework.InformationObjects;
+
 /**
  * Created by JC Denton on 11-01-2017.
  */

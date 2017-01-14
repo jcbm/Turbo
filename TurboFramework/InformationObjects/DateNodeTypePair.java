@@ -1,3 +1,7 @@
+package TurboFramework.InformationObjects;
+
+import TurboFramework.Enums.NodeType;
+
 import java.util.Date;
 
 public class DateNodeTypePair {

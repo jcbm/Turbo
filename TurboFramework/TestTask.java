@@ -1,6 +1,10 @@
+package TurboFramework;
+
+import TurboFramework.Interfaces.Function;
+import TurboFramework.Interfaces.Task;
+
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 /**
  * Created by JC Denton on 11-01-2017.

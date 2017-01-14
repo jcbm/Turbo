@@ -1,6 +1,9 @@
-/*
+package TurboFramework.InformationObjects;/*
 
  */
+
+import TurboFramework.InformationObjects.SubTaskData;
+import TurboFramework.Messages.SubtaskMessage;
 
 public class SubTaskMessageStatePair {
 

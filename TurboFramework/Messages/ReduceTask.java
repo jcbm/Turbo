@@ -1,5 +1,8 @@
+package TurboFramework.Messages;
+
+import TurboFramework.Interfaces.Function;
+
 import java.io.Serializable;
-import java.util.Collection;
 
 /**
  * Created by JC Denton on 09-01-2017.

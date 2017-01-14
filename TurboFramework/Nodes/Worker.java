@@ -1,3 +1,12 @@
+package TurboFramework.Nodes;
+
+import TurboFramework.Enums.NodeType;
+import TurboFramework.InformationObjects.ReducerInfo;
+import TurboFramework.InformationObjects.SchedulerInfo;
+import TurboFramework.Interfaces.Function;
+import TurboFramework.Messages.*;
+import TurboFramework.Enums.TaskPriority;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;

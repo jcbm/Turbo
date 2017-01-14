@@ -1,3 +1,5 @@
+package TurboFramework.Messages;
+
 import java.io.Serializable;
 
 /**

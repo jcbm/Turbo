@@ -1,3 +1,7 @@
+package TurboFramework.Interfaces;
+
+import TurboFramework.Interfaces.Function;
+
 import java.io.Serializable;
 import java.util.Collection;
 

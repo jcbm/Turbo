@@ -1,3 +1,7 @@
+package TurboFramework.Messages;
+
+import TurboFramework.InformationObjects.ReducerInfo;
+
 import java.io.Serializable;
 
 /**

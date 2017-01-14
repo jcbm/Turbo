@@ -1,3 +1,9 @@
+package TurboFramework.Messages;
+
+import TurboFramework.Interfaces.Function;
+import TurboFramework.InformationObjects.ReducerInfo;
+import TurboFramework.Enums.TaskPriority;
+
 import java.io.Serializable;
 import java.util.Collection;
 
