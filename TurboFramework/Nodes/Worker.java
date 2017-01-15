@@ -16,8 +16,8 @@ import java.net.UnknownHostException;
 import java.util.*;
 
 /**
- * Created by JC Denton on 04-01-2017.
- * <p/>
+ *
+ *
  * On sent, a backup result is stored. If the recieving reducer crashes, these must be resent to another. However, they also have to be easy to remove when the reducer completes the task completely. Thus, we have a hashMap of hashmaps, where the reducerID is associated with <parentID, list of tasks>.
  * Then if a reducer crashes, we can look up all the tasks that has been sent there and send to others, as these are every element associated with every parent in the inner hashmap. When a task is finish, we can throw out the result.
  * The scheduler sends the reducer and parent task name, and we simply delete the parent element key from the inner map.
@@ -41,16 +41,21 @@ public class Worker implements Runnable {
 
     private boolean processingTasks;
     // MonitorObjects
-    private Object syncObject = new Object();
+    private Object heartBeatSyncObject = new Object();
     private Object tasksAvailable = new Object();
+    private boolean debug;
 
-    public Worker(String address, int port, String Id, SchedulerInfo scheduler) {
+    public Worker(String address, int port, String id, SchedulerInfo scheduler) {
 
         this.address = address;
         this.port = port;
-        this.id = Id;
+        this.id = id;
         this.scheduler = scheduler;
     }
+
+    /**
+     * The event dispatching tread of the node. Listens for incoming traffic and spawns a SocketHandler to take care of it.
+     */
 
     @Override
     public void run() {
@@ -67,6 +72,10 @@ public class Worker implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public void activateDebug() {
+        this.debug = true;
     }
 
     class SocketHandler implements Runnable {
@@ -185,6 +194,7 @@ public class Worker implements Runnable {
                     try {
                         processingTasks = false;
                         synchronized (tasksAvailable) {
+
                             tasksAvailable.wait();
                         }
                     } catch (InterruptedException e) {
@@ -193,8 +203,8 @@ public class Worker implements Runnable {
                 }
                     // we've been awakened - tell heartbeat that we are active
                     processingTasks = true;
-                    synchronized (syncObject) {
-                        syncObject.notify();
+                    synchronized (heartBeatSyncObject) {
+                        heartBeatSyncObject.notify();
 
                     writeToLog("A task is available");
                     SubtaskMessage task;
@@ -216,11 +226,10 @@ public class Worker implements Runnable {
                     Object result = map.execute(data);
                     ReduceTask reduceTask = new ReduceTask(task.getParentId(), task.getId(), result, task.getReduce(), task.getSplitSize());
                     //  stop timer - inform scheduler of time and status
-                        long estimatedTime = System.nanoTime() - startTime;
+                        long timeToComplete = System.nanoTime() - startTime;
                     String schedulerIp = scheduler.getIp();
                     int schedulerPort = scheduler.getPort();
-                    Long timeToComplete = estimatedTime; //fixme
-                    Message message = new Message(MessageType.FINISHEDTASK, timeToComplete, id, task.getId());
+                        Message message = new Message(MessageType.FINISHEDTASK, timeToComplete, id, task.getId());
                     try {
                         Socket socketToScheduler = new Socket(schedulerIp, schedulerPort);
                         ObjectOutputStream objectOutputStream = new ObjectOutputStream(socketToScheduler.getOutputStream());
@@ -231,7 +240,6 @@ public class Worker implements Runnable {
                         e.printStackTrace();
                     }
 
-                    // if it is detected by one thread that the reducer is
                     // put in outgoing list - remove again when it is sent - it if fails or cant be sent it will be dealt with later
                     // outgoing should be HashMap where a reducerid is associated with a list of tasks - cleanup thread will then
                     ReducerInfo reducer = task.getReducer();
@@ -278,7 +286,9 @@ public class Worker implements Runnable {
     }
 
     private void writeToLog(String information) {
-        System.out.println("Worker " + id + ":" + information);
+        if (debug) {
+            System.out.println("Worker " + id + ":" + information);
+        }
     }
 
     /*
@@ -306,23 +316,17 @@ public class Worker implements Runnable {
                 // waits for processing of a task to start - initially false and set to false when a the task queue becomes empty AND last task has finished
                 while (!processingTasks) {
                     try {
-                        synchronized (syncObject) {
-                            syncObject.wait();
+                        synchronized (heartBeatSyncObject) {
+                            writeToLog("waiting to send heartBeat");
+                            heartBeatSyncObject.wait();
                         }
                     }
                     // processing of a task notifies thread that it has started
                     catch (InterruptedException e) {
-
                     }
+                    writeToLog("can send heartBeat");
                     // send heartbeat every X minutes - THIS SHOULD BE LOWER THAN THE VALUE THAT FAILUREDETECTOR LISTENS FOR AS THERE IS A DELAY DUE TO ESTABLISHING CONNECTION, ETC
-                    final int oneSecondInMilisecs = 1000;
-                    final int SecondsPerMinute = 60;
-                    try {
-                        Thread.sleep(beatFrequency * SecondsPerMinute * oneSecondInMilisecs);
-                    } catch (InterruptedException e) {
-                        // not sure if needed, but thinking that processingTask may be set to true if a task finishes while the tread is sleeping
 
-                    }
                     // To avoid uneccesary object creation, we should use the same heartBeat object everytime
                     try {
                         Socket socket = new Socket(scheduler.getIp(), scheduler.getPort());
@@ -334,6 +338,14 @@ public class Worker implements Runnable {
                         e.printStackTrace();
                     } catch (IOException e) {
                         e.printStackTrace();
+                    }
+                    final int oneSecondInMilisecs = 1000;
+                    final int SecondsPerMinute = 60;
+                    try {
+                        Thread.sleep(beatFrequency * SecondsPerMinute * oneSecondInMilisecs);
+                    } catch (InterruptedException e) {
+                        // not sure if needed, but thinking that processingTask may be set to true if a task finishes while the tread is sleeping
+
                     }
                 }
             }

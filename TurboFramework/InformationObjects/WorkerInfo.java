@@ -6,9 +6,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-/**
- * Created by JC Denton on 04-01-2017.
- */
 public class WorkerInfo {
     private String guid;
     private String address;
@@ -37,7 +34,7 @@ public class WorkerInfo {
 
     // if a node crashes, we need to have saved what it was working on. We store subjobs by the parent jobs id, but in a list, so we may have multiple subjobs associated with the same parentjob, in case the node execues more subjobs associated with this job
     public void addActiveTask(SubTaskData subtask) {
-        System.out.println("WorkerInfo " + guid + " has added " + subtask.getId() + " to active set");
+        writeToLog("WorkerInfo " + guid + " has added " + subtask.getId() + " to active set");
         String parentTask = subtask.getParentID();
         String subtaskID = subtask.getId();
         HashMap<String, SubTaskData> tasksForParent = activeTasks.get(parentTask);
@@ -51,10 +48,9 @@ public class WorkerInfo {
         printState();
     }
 
-    // we inactivate a task when it is finished, that is, it is removed from the activeset. However, to know
-    public void inactivateTask(String parentID, String subtaskID, long completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
+    public synchronized void inactivateTask(String parentID, String subtaskID, long completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
         //should never return null, so we can be sure we get a collection
-        System.out.println("WorkerInfo " + guid + " is removing " + subtaskID + " from active set");
+        writeToLog("WorkerInfo " + guid + " is removing " + subtaskID + " from active set");
         HashMap<String, SubTaskData> subTaskDataHashMap = activeTasks.get(parentID);
         // this task has been completed
         SubTaskData subTaskData = subTaskDataHashMap.get(subtaskID);
@@ -66,21 +62,26 @@ public class WorkerInfo {
         }
         compledTasksForParent.put(subtaskID, subTaskData);
         subTaskDataHashMap.remove(subtaskID);
+        if (subTaskDataHashMap.isEmpty()) {
+            // remove outer key if value is empty collection
+            activeTasks.remove(parentID);
+        }
         ArrayList<SubTaskData> notFinalizedTasks = containedTasks.get(parentID);
         if (notFinalizedTasks == null) {
             notFinalizedTasks = new ArrayList<>();
             containedTasks.put(parentID, notFinalizedTasks);
         }
         notFinalizedTasks.add(subTaskData);
-        //containedTasks.put(parentID, notFinalizedTasks);
-        // maybe  activeTasks.put(parentID, subTaskDataHashMap);
-        System.out.println("WorkerInfo " + guid + " has removed " + subtaskID + " from active set");
-    printState();
+    }
+
+    private void writeToLog(String s) {
+        if (1 == 1) return;
+        System.out.println("WorkerInfo " + guid + " : " + s);
     }
 
     // Called when all subtask for a given task has completed
     public void completeAndEvaluateTask(String parentID, long averageCompletionTime) { // we get the average time in the scheduler by using the taskID
-        System.out.println("WorkerInfo " + guid + " completing task " + parentID);
+       writeToLog("WorkerInfo " + guid + " completing task " + parentID);
 // go into historical tasks - get each task associated with this parent and getTime;
         HashMap<String, SubTaskData> subTasksForThisTask = historicalTasks.get(parentID);
         Iterator<Map.Entry<String, SubTaskData>> iterator = subTasksForThisTask.entrySet().iterator();

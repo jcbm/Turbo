@@ -1,8 +1,5 @@
 package TurboFramework.InformationObjects;
 
-/**
- * Created by JC Denton on 11-01-2017.
- */
 public class Evaluation {
     private final String subtask;
     private final EvaluationScore score;

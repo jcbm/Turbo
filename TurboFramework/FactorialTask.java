@@ -6,16 +6,17 @@ import TurboFramework.Interfaces.Task;
 import java.util.ArrayList;
 import java.util.Collection;
 
-public class TestTask implements Task {
+
+public class FactorialTask implements Task {
 
     private String name;
     private int splitSize;
 
-    public TestTask(int splitSize) {
+    public FactorialTask(int splitSize) {
         this.splitSize = splitSize;
     }
 
-    public TestTask(String name, int splitSize) {
+    public FactorialTask(String name, int splitSize) {
         this.splitSize = splitSize;
     this.name = name;
     }
@@ -25,10 +26,9 @@ public class TestTask implements Task {
     public Collection getData() {
         int size = splitSize * 3;
         ArrayList<Integer> numbers = new ArrayList<>(size);
-
+// get numbers 5, 6 ...
         for (int i = 1; i <= size; i++) {
-            numbers.add(i);
-            //System.out.println(numbers.get(i - 1));
+            numbers.add(i+4);
         }
         return numbers;
     }
@@ -62,20 +62,23 @@ public class TestTask implements Task {
             public Object execute(Collection<Object> data) {
                 int sum = 0;
                 // Have added sleep to delay execution
-                try {
-                    Thread.sleep(15 * 1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
                 for (Object integer : data) {
-                    sum = sum + ((Integer) integer);
+                    sum +=factorial((Integer) integer);
+                    }
 
-                }
                 Object returnValue = new Integer(sum);
                 return returnValue;
             }
         }
         return new Mapper();
+    }
+
+    public static int factorial(int n) {
+        int fact = 1; // this  will be the result
+        for (int i = 1; i <= n; i++) {
+            fact *= i;
+        }
+        return fact;
     }
 
     @Override

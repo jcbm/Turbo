@@ -6,6 +6,7 @@ import TurboFramework.Interfaces.Function;
 import TurboFramework.Interfaces.SchedulingStrategy;
 import TurboFramework.Interfaces.Task;
 import TurboFramework.Messages.*;
+import TurboFramework.Util.TimeMeasurer;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -16,9 +17,6 @@ import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-/**
- * Created by JC Denton on 04-01-2017.
- */
 public class Scheduler implements Runnable {
     private final List<WorkerInfo> workers;
     private final SchedulingStrategy schedulingStrategy;
@@ -44,12 +42,14 @@ public class Scheduler implements Runnable {
     private HashMap<String, Task> processedTasks = new HashMap<>();
     // TaskId : Result
     private HashMap<String, Object> results = new HashMap<>();
+    private HashMap<String, TimeMeasurer> timeMeasurerForTask = new HashMap();
     private ConcurrentSkipListMap<String, DateNodeTypePair> heartBeatHashMap = new ConcurrentSkipListMap<>(); // treeMap is ordered
 
 
     //Monitors:
     private Object tasksForSending = new Object();
     boolean debug;
+    private TimeMeasurer timeMeasurer;
 
     public Scheduler(List<WorkerInfo> workers, List<ReducerInfo> reducers, SchedulingStrategy schedulingStrategy, int heartBeatFrequencyInMinutes, int port) throws Exception {
         this.workers = workers;
@@ -65,13 +65,6 @@ public class Scheduler implements Runnable {
         if (reducers.isEmpty()) {
             throw new Exception("No reducers assigned!");
         }
-        if (reducers.size() > workers.size()) {
-            // fixme: I dont think this is a problem anyway
-            // throw new Exception("More reducers than workers have been provided!");
-        }
-
-//        this.workers = workers; // all workers on startup
-
         for (ReducerInfo reducer : reducers) {
             this.reducers.put(reducer.getID(), reducer);
         }
@@ -122,7 +115,8 @@ public class Scheduler implements Runnable {
     private void updateHeartbeats(Message message) {
         String sender = message.getSender();
         // just in case I screwed up somewhere and a heartbeat is sent after the last task has been completed
-        if (!allWorkers.get(sender).isInactive()) {
+        WorkerInfo workerInfo = allWorkers.get(sender);
+        if (workerInfo != null && workerInfo.isInactive()) {
             NodeType nodeType = (NodeType) message.getData();
             Date timeReceived = new Date();
             DateNodeTypePair dateAndNodeType = new DateNodeTypePair(timeReceived, nodeType);
@@ -140,6 +134,10 @@ public class Scheduler implements Runnable {
         heartBeatHashMap.remove(id);
     }
 
+    public void setTimeMeasurer(TimeMeasurer timeMeasurer) {
+        this.timeMeasurer = timeMeasurer;
+    }
+
     /**
      * Active scheduling strategy - Just sends all tasks, even though workers may be busy
      */
@@ -151,7 +149,6 @@ public class Scheduler implements Runnable {
                 //check that there are Tasks to distribute
                 if (tasks.isEmpty()) {
                     try {
-                        //FIXME
                         synchronized (tasksForSending) {
                             tasksForSending.wait();
                         }
@@ -159,16 +156,12 @@ public class Scheduler implements Runnable {
                     }
                 }
                 writeToLog("There are " + tasks.size() + " available tasks (EagertaskDistributor)");
-                // object creation should be avoided though and here we create
                 // Note that framework cannot realize any type of the data - it must use the generic collection class, and it is up to the Map/Reduce methods to perform the necessary casts
-                // An iterator is used here so that a task can be removed when it has been processed
                 for (Iterator<Task> iter = tasks.listIterator(); iter.hasNext(); ) {
                     Task task = iter.next();
                     writeToLog("Splitting " + task.getName());
                     Collection data = task.getData();
-                    // if there are more workers than elements in the data, split into single elements. Else, split after number of workers. A task can provide it's own split size, and throw the default value away in the split() method.
-                    int splitSize = 0;
-                    ArrayList<SubTaskMessageStatePair> subjobs = createSubjobs(task, task.split(data, splitSize));
+                    ArrayList<SubTaskMessageStatePair> subjobs = createSubjobs(task, task.split(data));
                     writeToLog(task.getName() + " has been split into " + subjobs.size() + " subtasks");
                     sendTask(subjobs);
                     iter.remove();
@@ -281,7 +274,6 @@ public class Scheduler implements Runnable {
                 responsibleWorkersForParentTasks = new ArrayList<>();
                 workerResponsibleForTask.put(parentID, responsibleWorkersForParentTasks);
             }
-
             String workerid = worker.getGUID();
             if (!responsibleWorkersForParentTasks.contains(workerid)) {
                 // Don't add the same worker multiple times to the list - alternatively, maybe use a set
@@ -355,6 +347,11 @@ public class Scheduler implements Runnable {
             } else if (type == MessageType.HEARTBEAT) {
                 updateHeartbeats(message);
             } else if (type == MessageType.RESULT) {
+                try {
+                    timeMeasurer.stopMeasurement();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 Result result = (Result) message.getData();
                 String parentTask = result.getTaskID(); // parent task - now we need to know who worked on this task => get children of task, look up their responsibleWorker
                 List<String> idsOfWorkersResponsibleForTask = workerResponsibleForTask.get(parentTask);
@@ -362,8 +359,7 @@ public class Scheduler implements Runnable {
                     WorkerInfo responsibleWorker = allWorkers.get(id);
                     responsibleWorker.finalizeTask(parentTask);
                 }
-
-                writeToLog("recieved result " + result.getResult() + " from task " + result.getTaskID());
+                System.out.println("Final result " + result.getResult() + " from task " + result.getTaskID());
                 results.put(parentTask, result.getResult());
 
             }
@@ -553,7 +549,9 @@ public class Scheduler implements Runnable {
 
 
     private void writeToLog(String information) {
-        System.out.println("Scheduler: " + information);
+        if (debug) {
+            System.out.println("Scheduler: " + information);
+        }
     }
 }
 

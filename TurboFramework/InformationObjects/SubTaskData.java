@@ -2,9 +2,6 @@ package TurboFramework.InformationObjects;
 
 import java.util.ArrayList;
 
-/**
- * Created by JC Denton on 04-01-2017.
- */
 public class SubTaskData {
 
     private long completionTime;

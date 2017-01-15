@@ -7,9 +7,6 @@ import TurboFramework.Enums.TaskPriority;
 import java.io.Serializable;
 import java.util.Collection;
 
-/**
- * Created by JC Denton on 09-01-2017.
- */
 public class SubtaskMessage implements Serializable {
     private final String id;
     private Function map;

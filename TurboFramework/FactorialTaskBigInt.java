@@ -3,32 +3,33 @@ package TurboFramework;
 import TurboFramework.Interfaces.Function;
 import TurboFramework.Interfaces.Task;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 
-public class TestTask implements Task {
+
+public class FactorialTaskBigInt implements Task {
 
     private String name;
     private int splitSize;
 
-    public TestTask(int splitSize) {
+    public FactorialTaskBigInt(int splitSize) {
         this.splitSize = splitSize;
     }
 
-    public TestTask(String name, int splitSize) {
+    public FactorialTaskBigInt(String name, int splitSize) {
         this.splitSize = splitSize;
-    this.name = name;
+        this.name = name;
     }
 
 
     @Override
     public Collection getData() {
-        int size = splitSize * 3;
-        ArrayList<Integer> numbers = new ArrayList<>(size);
+        int collectionSize = 100; // TODO: change to larger
+        ArrayList<BigInteger> numbers = new ArrayList<>(collectionSize);
 
-        for (int i = 1; i <= size; i++) {
-            numbers.add(i);
-            //System.out.println(numbers.get(i - 1));
+        for (int i = 1; i <= collectionSize; i++) {
+            numbers.add(BigInteger.valueOf(20));
         }
         return numbers;
     }
@@ -37,15 +38,18 @@ public class TestTask implements Task {
     public Collection<Collection> split(Collection data) {
         Collection<Collection> collections = new ArrayList<>(splitSize);
         int sizeOfSubCollections = data.size() / splitSize;
-
+        int remainder = data.size() % splitSize;
         // example: numbers 1-9 in data spread in 3 lists
         //
         int firstElementOfSublist = 0;
         for (int i = 0; i < splitSize; i++) {
-            ArrayList<Integer> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist, firstElementOfSublist + 3));
+            // last split size has a different size if data size is not a multiple of splitsize.
+            int lastElementOfSublist  = (remainder != 0 && (i + 1) == splitSize) ?  firstElementOfSublist + remainder : firstElementOfSublist +sizeOfSubCollections ;
+            ArrayList<BigInteger> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist,lastElementOfSublist));
             collections.add(subCollection);
-            firstElementOfSublist += 3;
-        }
+            firstElementOfSublist += sizeOfSubCollections;
+            }
+
         return collections;
     }
 
@@ -60,22 +64,27 @@ public class TestTask implements Task {
 
             @Override
             public Object execute(Collection<Object> data) {
-                int sum = 0;
+                BigInteger sum = BigInteger.ZERO;
                 // Have added sleep to delay execution
-                try {
-                    Thread.sleep(15 * 1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                for (Object bigInt : data) {
+                    sum = sum.add(factorial((BigInteger) bigInt));
                 }
-                for (Object integer : data) {
-                    sum = sum + ((Integer) integer);
 
-                }
-                Object returnValue = new Integer(sum);
+                Object returnValue = sum;
                 return returnValue;
             }
         }
         return new Mapper();
+    }
+
+    public BigInteger factorial(BigInteger n) {
+        BigInteger factorial = BigInteger.valueOf(1);
+
+        for (int i = 1; i <= n.intValue(); i++) {
+            factorial = factorial.multiply(BigInteger.valueOf(i));
+        }
+
+        return factorial;
     }
 
     @Override
@@ -83,9 +92,9 @@ public class TestTask implements Task {
         class Reducer implements Function {
             @Override
             public Object execute(Collection<Object> data) {
-                int sum = 0;
+                BigInteger sum = BigInteger.ZERO;
                 for (Object integer : data) {
-                    sum = sum + ((Integer) integer);
+                    sum = sum.add((BigInteger) integer);
                 }
 
 
@@ -96,6 +105,6 @@ public class TestTask implements Task {
     }
 
     public int getSplitSize() {
-      return splitSize;
+        return splitSize;
     }
 }

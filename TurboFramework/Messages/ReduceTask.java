@@ -4,10 +4,6 @@ import TurboFramework.Interfaces.Function;
 
 import java.io.Serializable;
 
-/**
- * Created by JC Denton on 09-01-2017.
- */
-
 /*
 A class to send jobs to the reducer. There's no need to include all the info that the Mapper recieves.
 // Possible split this into two so mappers only send the data, the rest is sent from the scheduler
