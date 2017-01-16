@@ -6,11 +6,15 @@ import java.math.BigInteger;
 public class SequentialFactorialBigInt {
 
     public static void main(String[] args) {
-        int value = 20;
+        BigInteger value = BigInteger.valueOf(100);
         TimeMeasurer timeMeasurer = new TimeMeasurer();
         timeMeasurer.startMeasurement();
-        factorial(BigInteger.valueOf(value));
+        BigInteger sum = BigInteger.ZERO;
+        for (int i = 0; i < 10000; i++) {
+           sum = sum.add(factorial((value)));
+        }
         try {
+            System.out.println(sum);
             timeMeasurer.stopMeasurement();
         } catch (Exception e) {
             e.printStackTrace();

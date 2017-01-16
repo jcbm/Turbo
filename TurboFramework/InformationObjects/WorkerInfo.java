@@ -5,18 +5,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class WorkerInfo {
     private String guid;
     private String address;
     private int port;
 
-    public HashMap<String, HashMap<String, SubTaskData>> getActiveTasks() {
+    public ConcurrentHashMap<String, ConcurrentHashMap<String, SubTaskData>> getActiveTasks() {
         return activeTasks;
     }
 
     // ParentID to HashMap<subtask id to subtaskData> - tells which tasks are waiting to processed/are currently processed
-    private HashMap<String, HashMap<String, SubTaskData>> activeTasks = new HashMap<>(); //
+    private ConcurrentHashMap<String, ConcurrentHashMap<String, SubTaskData>> activeTasks = new ConcurrentHashMap<>(); //
     // containedTasks tells which tasks have been completed at the worker, but not yet at the reducer. We don't need a hashMap here, as we send these in a all or none fashion.
     private HashMap<String, ArrayList<SubTaskData>> containedTasks = new HashMap<>(); //
     private HashMap<String, HashMap<String, SubTaskData>> historicalTasks = new HashMap<>(); //
@@ -37,10 +38,10 @@ public class WorkerInfo {
         writeToLog("WorkerInfo " + guid + " has added " + subtask.getId() + " to active set");
         String parentTask = subtask.getParentID();
         String subtaskID = subtask.getId();
-        HashMap<String, SubTaskData> tasksForParent = activeTasks.get(parentTask);
+        ConcurrentHashMap<String, SubTaskData> tasksForParent = activeTasks.get(parentTask);
         // No tasks have previously been added for this parent
         if (tasksForParent == null) {
-            tasksForParent = new HashMap<>();
+            tasksForParent = new ConcurrentHashMap<>();
             activeTasks.put(parentTask, tasksForParent);
 
         }
@@ -51,7 +52,7 @@ public class WorkerInfo {
     public synchronized void inactivateTask(String parentID, String subtaskID, long completionTime) { // this is obtained in the scheduler where we have SubtaskID:subtask (not data) map --> getParent
         //should never return null, so we can be sure we get a collection
         writeToLog("WorkerInfo " + guid + " is removing " + subtaskID + " from active set");
-        HashMap<String, SubTaskData> subTaskDataHashMap = activeTasks.get(parentID);
+        ConcurrentHashMap<String, SubTaskData> subTaskDataHashMap = activeTasks.get(parentID);
         // this task has been completed
         SubTaskData subTaskData = subTaskDataHashMap.get(subtaskID);
         subTaskData.setCompletionTime(completionTime);
@@ -75,7 +76,6 @@ public class WorkerInfo {
     }
 
     private void writeToLog(String s) {
-        if (1 == 1) return;
         System.out.println("WorkerInfo " + guid + " : " + s);
     }
 
@@ -122,8 +122,9 @@ public class WorkerInfo {
     For debugging - Get all stored values in a user-friendly format
      */
     public void printState() {
-        if (1 == 1) return;
+/*
         System.out.println("---STATE OF WORKER " + guid + " ---");
+
         String active = isInactive() ? "not active" : "active";
         System.out.println("Worker is " + active);
         System.out.println("Worker is yet to complete:");
@@ -178,8 +179,9 @@ public class WorkerInfo {
             String subtaskId = evaluation.getSubtask();
             EvaluationScore evaluationScore = evaluation.getScore();
             System.out.println(subtaskId + " | " + evaluationScore);
+        */
         }
     }
 
 
-}
+

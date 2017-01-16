@@ -15,6 +15,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class Scheduler implements Runnable {
@@ -101,7 +102,8 @@ public class Scheduler implements Runnable {
 // start task loader
 //TODO:
         try {
-            ServerSocket serverSocket = new ServerSocket(port);
+            final int acceptNumberOfIncomingConnections = 1000; // randomly chosen number - default value is 50, which leads to when many workers are active
+            ServerSocket serverSocket = new ServerSocket(port, acceptNumberOfIncomingConnections);
             while (true) {
                 Socket socket = serverSocket.accept();
                 new Thread(new NetWorkListener(socket)).start();
@@ -283,7 +285,7 @@ public class Scheduler implements Runnable {
             worker.addActiveTask(subTaskData);
             setWorkerNodeAsActive(worker.getGUID());
             String reducerId = subtaskMessage.getReducer().getID();
-// Store that the reducer is responsible for this given task
+            // Store that the reducer is responsible for this given task
             List<String> tasksAtReducer = tasksThatReducerIsResponsibleFor.get(reducerId);
             if (tasksAtReducer == null) {
                 tasksAtReducer = new ArrayList<>();
@@ -333,7 +335,6 @@ public class Scheduler implements Runnable {
             try {
                 ObjectInputStream inputStream = new ObjectInputStream(socket.getInputStream());
                 message = (Message) inputStream.readObject();
-
                 inputStream.close();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -518,7 +519,7 @@ public class Scheduler implements Runnable {
 // combine the data in every TaskDataObject from the WorkerInfo with the original tasks
         // for every task and for every subtask associated with the task
         ArrayList<SubTaskMessageStatePair> messages = new ArrayList<>();
-        HashMap<String, HashMap<String, SubTaskData>> lostTasks = worker.getActiveTasks();
+        ConcurrentHashMap<String, ConcurrentHashMap<String, SubTaskData>> lostTasks = worker.getActiveTasks();
         Iterator it = lostTasks.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry pair = (Map.Entry) it.next();

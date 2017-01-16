@@ -25,7 +25,7 @@ public class FactorialTaskBigInt implements Task {
 
     @Override
     public Collection getData() {
-        int collectionSize = 100; // TODO: change to larger
+        int collectionSize = 10000;
         ArrayList<BigInteger> numbers = new ArrayList<>(collectionSize);
 
         for (int i = 1; i <= collectionSize; i++) {
@@ -36,19 +36,34 @@ public class FactorialTaskBigInt implements Task {
 
     @Override
     public Collection<Collection> split(Collection data) {
+        int upperLimit;
+        int subListIncrement;
         Collection<Collection> collections = new ArrayList<>(splitSize);
         int sizeOfSubCollections = data.size() / splitSize;
         int remainder = data.size() % splitSize;
-        // example: numbers 1-9 in data spread in 3 lists
-        //
+        boolean checkForLastSplit = false;
+        if (data.size() <= splitSize) {
+            // we can't split a task more than the size of the collection
+            upperLimit = data.size();
+            subListIncrement = 1;
+        } else {
+           subListIncrement = sizeOfSubCollections;
+            upperLimit = splitSize;
+            checkForLastSplit = true;
+        }
+
         int firstElementOfSublist = 0;
-        for (int i = 0; i < splitSize; i++) {
+
+        for (int i = 0; i < upperLimit; i++) {
             // last split size has a different size if data size is not a multiple of splitsize.
-            int lastElementOfSublist  = (remainder != 0 && (i + 1) == splitSize) ?  firstElementOfSublist + remainder : firstElementOfSublist +sizeOfSubCollections ;
-            ArrayList<BigInteger> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist,lastElementOfSublist));
-            collections.add(subCollection);
-            firstElementOfSublist += sizeOfSubCollections;
+            int lastElementOfSublist = firstElementOfSublist + subListIncrement;
+            if (checkForLastSplit && (remainder != 0 && (i + 1) == splitSize)) {
+                lastElementOfSublist = firstElementOfSublist + remainder;
             }
+            ArrayList<BigInteger> subCollection = new ArrayList<>(((ArrayList) data).subList(firstElementOfSublist, lastElementOfSublist));
+            collections.add(subCollection);
+            firstElementOfSublist += subListIncrement;
+        }
 
         return collections;
     }

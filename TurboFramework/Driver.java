@@ -15,16 +15,17 @@ import java.util.ArrayList;
 public class Driver {
 
     public static void main(String[] args) {
-        int numberOfWorkers = 1;// Integer.parseInt(args[0]);
-        int numberOfReducers = 1; // Integer.parseInt(args[1]);
+        int numberOfWorkers = 10; // Number of workers to setup network with
+        int numberOfReducers =  3; // Number of reducers to setup network
         SchedulingStrategy schedulingStrategy = new BasicScheduler();
         String localHost = "localhost";
         int schedulerPort = 8080;
-        int workerStartport = 4000;
-        int splitSize = 1000;
+        int workerStartport = 42000; // First port of the port range used for workers
+        int reducerStartPort = 52000; // First port of the port range used for reducers
+        int splitSize = 10; // Number of subtasks to create for data
         ArrayList<WorkerInfo> workerInfos = new ArrayList<>();
-        int heartbeatFrequenceInMinutes = 5;
-        SchedulerInfo schedulerInfo = new SchedulerInfo(localHost, schedulerPort, heartbeatFrequenceInMinutes);
+        int heartbeatFrequencyInMinutes = 5;
+        SchedulerInfo schedulerInfo = new SchedulerInfo(localHost, schedulerPort, heartbeatFrequencyInMinutes);
         for (int i = 0; i < numberOfWorkers; i++) {
             int port = workerStartport + i;
             String id = String.valueOf(i);
@@ -32,9 +33,8 @@ public class Driver {
             WorkerInfo workerInfo = new WorkerInfo(localHost, port, id);
             workerInfos.add(workerInfo);
            new Thread(worker).start();
-            //workers.add(worker);
         }
-        int reducerStartPort = 6000;
+
         ArrayList<ReducerInfo> reducerInfos = new ArrayList<>();
         for (int j = 0; j < numberOfReducers; j++) {
             int reducerPort = reducerStartPort + j;
@@ -46,12 +46,17 @@ public class Driver {
             new Thread(reducer).start();
         }
         try {
-            Scheduler scheduler = new Scheduler(workerInfos, reducerInfos, schedulingStrategy, heartbeatFrequenceInMinutes, schedulerPort);
+            Scheduler scheduler = new Scheduler(workerInfos, reducerInfos, schedulingStrategy, heartbeatFrequencyInMinutes, schedulerPort);
            // scheduler.activateDebug();
-            //scheduler.addTask(new TestTask("Test task 1", splitSize));
-           //scheduler.addTask(new TestTask("Test task 2", splitSize));
-            scheduler.addTask(new FactorialTaskBigInt("Factorial", splitSize));
-TimeMeasurer timeMeasurer = new TimeMeasurer();
+            //scheduler.addTask(new TestTask("Test task 1", splitSize)); // A simple task
+         //  scheduler.addTask(new FactorialTask("Test task 2", splitSize)); // Factorial based on integers - overflows
+            scheduler.addTask(new FactorialTaskBigInt("Factorial", splitSize)); // Factorial based on BigInteger
+
+
+
+
+
+            TimeMeasurer timeMeasurer = new TimeMeasurer();
             scheduler.setTimeMeasurer(timeMeasurer);
             timeMeasurer.startMeasurement();
             new Thread(scheduler).start();
